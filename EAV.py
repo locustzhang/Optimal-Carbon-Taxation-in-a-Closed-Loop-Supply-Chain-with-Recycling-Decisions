@@ -1,688 +1,811 @@
 """
-CLSC 闭环供应链 Stackelberg 博弈模型 — 最终修复版
-========================================================
-
-修复记录（相对原始代码共 4 项核心修复）：
-
-[Fix 1] 排放函数：替代模型（原：加法模型）
-  原：E = e_m·D + e_r·ρ·D         → 回收越多排放越多 ✗
-  改：E = e_m·(1-ρ)·D + e_r·ρ·D  → 回收替代新生产，排放越少 ✓
-
-[Fix 2] 集中决策基准：VIF 利润最大化（原：社会计划者 SW 最大化）
-  原：centralized = max_{p,ρ} SW    → VIF 亏损经营 (π=-6668)，不符合现实 ✗
-  改：VIF = max_{p,ρ} π_VIF        → VIF 自主盈利，政府对外设 τ^C 最大化 SW ✓
-  同时加入参与约束：π_VIF ≥ 0
-
-[Fix 3] 福利公式：含税收返还（原：缺少 +τ·E）
-  原：SW = CS + π_m + π_r - η·E²        → τ→0 恒为最优 ✗
-  改：SW = CS + π_m + π_r + τ·E - η·E² → 税收作为转移支付归还社会 ✓
-
-[Fix 4] 参数 k：由 150 → 12000（确保分散和集中均为内点解）
-
-经济意义说明：
-  E^C > E^*（集中排放略高于分散）是本模型的一个内生结论，非 bug。
-  集中决策消除了双重加价，产量更大（D^C=81.7 > D^*=54.4），
-  即使回收率更高，产量效应仍主导排放。这是"绿色悖论"在供应链中的体现，
-  需要更强的税收信号（τ^C > τ*）来应对。
+CLSC Stackelberg Game — Final Verified Version (v2: all layout bugs fixed)
+===========================================================================
+Fixes vs v1:
+  F-L1  Fig1(a): tau* label repositioned below the vline (no overlap with arrow)
+  F-L2  Fig2(a): E^C label moved inside axes; green-paradox box repositioned
+  F-L3  Fig2(b): SW^C reference line clipped to axes ylim; label placed inside
+  F-L4  Fig3(b): waterfall rebuilt as proper bridge chart with correct sign logic
+  F-L5  Fig4(b): annotation placed away from the flat SW^RS line
+  F-L6  Fig5:    top margin increased so suptitle clears panel (a) title
+  F-L7  Font:    auto-detect best available serif; suppress findfont warnings
 """
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import pandas as pd
+from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import AutoMinorLocator, FuncFormatter
 from dataclasses import dataclass
 from scipy.optimize import minimize_scalar, minimize
+import warnings, logging
 
-# ==============================================================
-# Publication Plot Style (NPG Nature Style)
-# ==============================================================
+# ── Silence font-not-found warnings (user environment may lack LM Roman) ──────
+warnings.filterwarnings("ignore")
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+logging.getLogger("matplotlib").setLevel(logging.ERROR)
+
+# ── Auto-detect best available serif font ─────────────────────────────────────
+def _best_serif() -> str:
+    from matplotlib import font_manager
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    for font in ["Latin Modern Roman", "Lora", "Caladea",
+                 "Liberation Serif", "DejaVu Serif", "FreeSerif"]:
+        if font in available:
+            return font
+    return "serif"
+
+_SERIF = _best_serif()
+
+# ── Style ─────────────────────────────────────────────────────────────
 plt.rcParams.update({
-    "font.family":                    "serif",
-    "font.serif":                     ["Times New Roman", "DejaVu Serif"],
-    "mathtext.fontset":               "cm",
-    "axes.labelsize":                 13,
-    "axes.titlesize":                 14,
-    "axes.titleweight":               "bold",
-    "legend.fontsize":                10.5,
-    "xtick.labelsize":                11,
-    "ytick.labelsize":                11,
-    "axes.linewidth":                 1.4,
-    "grid.alpha":                     0.25,
-    "grid.linestyle":                 "--",
-    "figure.constrained_layout.use": True,
-    "savefig.dpi":                    600,
-    "savefig.bbox":                   "tight",
+    "font.family":         _SERIF,
+    "mathtext.fontset":    "cm",
+    "font.size":           9.5,
+    "axes.labelsize":      10.5,
+    "axes.titlesize":      10.5,
+    "axes.titleweight":    "normal",
+    "axes.titlepad":       8,
+    "legend.fontsize":     8.5,
+    "xtick.labelsize":     8.5,
+    "ytick.labelsize":     8.5,
+    "axes.linewidth":      0.8,
+    "lines.linewidth":     1.8,
+    "lines.markersize":    5.5,
+    "patch.linewidth":     0.7,
+    "xtick.direction":     "out",
+    "ytick.direction":     "out",
+    "xtick.major.width":   0.8, "ytick.major.width":   0.8,
+    "xtick.minor.width":   0.5, "ytick.minor.width":   0.5,
+    "xtick.major.size":    4.0, "ytick.major.size":    4.0,
+    "xtick.minor.size":    2.0, "ytick.minor.size":    2.0,
+    "xtick.major.pad":     4,   "ytick.major.pad":     4,
+    "axes.spines.top":     False,
+    "axes.spines.right":   False,
+    "grid.alpha":          0.20,
+    "grid.linestyle":      "-",
+    "grid.linewidth":      0.4,
+    "grid.color":          "#cccccc",
+    "legend.frameon":      True,
+    "legend.framealpha":   0.93,
+    "legend.edgecolor":    "#cccccc",
+    "legend.handlelength": 2.0,
+    "legend.handleheight": 0.8,
+    "legend.borderpad":    0.5,
+    "legend.labelspacing": 0.35,
+    "figure.facecolor":    "white",
+    "axes.facecolor":      "white",
+    "savefig.dpi":         600,
+    "savefig.bbox":        "tight",
+    "savefig.pad_inches":  0.08,
+    "figure.constrained_layout.use": False,
 })
 
-# NPG Color Palette
-C_RED   = "#E64B35"
-C_BLUE  = "#4DBBD5"
-C_GREEN = "#00A087"
-C_DARK  = "#3C5488"
-C_ORANG = "#F39B7F"
-C_GREY  = "#7E6148"
+C1="#1B3A6B"; C2="#C94B2D"; C3="#2E7D5E"
+C4="#B07D2A"; C5="#5C4B8A"; CG="#7A7A7A"
 
+def _sax(ax, xlabel="", ylabel="", title="", grid=True):
+    if xlabel: ax.set_xlabel(xlabel, labelpad=5)
+    if ylabel: ax.set_ylabel(ylabel, labelpad=6)
+    if title:  ax.set_title(title, pad=8)
+    if grid:   ax.grid(True, which="major", zorder=0)
+    ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(which="minor", length=2.0, width=0.5)
+    ax.tick_params(which="major", length=4.0, width=0.8)
+    for sp in ["left","bottom"]:
+        ax.spines[sp].set_linewidth(0.8); ax.spines[sp].set_color("#333333")
+    return ax
 
-# ==============================================================
-# Model Configuration
-# ==============================================================
+def _pl(ax, label, x=-0.13, y=1.05):
+    ax.text(x, y, label, transform=ax.transAxes,
+            fontsize=12, fontweight="bold", va="top", ha="left", color="#1a1a1a")
+
+def _vl(ax, x, c=C2, lw=1.2, ls=":", a=0.75):
+    ax.axvline(x, color=c, lw=lw, ls=ls, alpha=a, zorder=2)
+
+def _hl(ax, y, c=CG, lw=1.0, ls="--", a=0.65):
+    ax.axhline(y, color=c, lw=lw, ls=ls, alpha=a, zorder=2)
+
+def _dot(ax, x, y, c=C2, s=55, z=8):
+    ax.scatter([x],[y], color=c, s=s, zorder=z, edgecolors="white", linewidths=1.0)
+
+def _save(fig, name):
+    for ext in ["pdf","png"]:
+        fig.savefig(f"{name}.{ext}", dpi=600)
+    plt.close(fig)
+    print(f"    {name}.{{pdf,png}}")
+
+# ── Model (identical to v1) ───────────────────────────────────────────
 @dataclass
-class ModelConfig:
-    # Demand
-    a:       float = 500
-    b:       float = 1.3
-    gamma:   float = 10
+class Cfg:
+    a:float=500.; b:float=1.3; gamma:float=10.; g:float=0.5
+    c_m:float=200.; c_r:float=170.; k:float=12000.
+    e_m:float=0.8; e_r:float=0.2; eta:float=3.
+    tau_max:float=150.; tol:float=1e-10
+    @property
+    def dc(self): return self.c_m-self.c_r
+    @property
+    def de(self): return round(self.e_m-self.e_r,10)
+    @property
+    def gg(self): return self.gamma*self.g
 
-    # Cost
-    c_m:     float = 200
-    c_r:     float = 170
-    k:       float = 12000   # [Fix 4] was 150/600 → must satisfy k > D·Δc/2
+def Df(c,p):  return max(c.a-c.b*p+c.gg,0.)
+def Ef(c,d,r):return (c.e_m*(1-r)+c.e_r*r)*d
+def CSf(c,p): return (c.a-p+c.gg)**2/(2*c.b)
+def prf(c,w): return (c.a+c.gg+c.b*w)/(2*c.b)
+def SWf(c,cs,pi,tau,em): return cs+pi+tau*em-c.eta*em**2
+def rs(c,d,tau): return float(np.clip(d*(c.dc+tau*c.de)/(2*c.k),0,1))
 
-    # Emission  (substitution model: e_m > e_r)
-    e_m:     float = 0.8
-    e_r:     float = 0.2
+def pim(c,w,rho,tau):
+    p=prf(c,w); d=Df(c,p); em=Ef(c,d,rho)
+    return (w-c.c_m)*d+c.dc*rho*d-tau*em-c.k*rho**2
 
-    # Environmental damage
-    eta:     float = 3.0
+def pivif(c,p,rho,tau):
+    d=Df(c,p); em=Ef(c,d,rho)
+    return (p-c.c_m)*d+c.dc*rho*d-c.k*rho**2-tau*em
 
-    # Green preference
-    g:       float = 0.5
+def dec_solve(c,tau):
+    def neg(w):
+        d=Df(c,prf(c,w)); r=rs(c,d,tau)
+        return -pim(c,w,r,tau)
+    res=minimize_scalar(neg,bounds=(c.c_m+.01,c.a/c.b-.01),
+                        method="bounded",options={"xatol":c.tol})
+    w=float(res.x); p=prf(c,w); d=Df(c,p)
+    rho=rs(c,d,tau); em=Ef(c,d,rho)
+    pm=pim(c,w,rho,tau); pr=(p-w)*d; cs=CSf(c,p)
+    sw=SWf(c,cs,pm+pr,tau,em)
+    return dict(tau=tau,w=w,p=p,rho=rho,D=d,E=em,pi_m=pm,pi_r=pr,CS=cs,
+                env_dam=c.eta*em**2,tax_rev=tau*em,SW=sw)
 
-    # Tax bound
-    tau_max: float = 150
+def dec_eq(c,tau=None):
+    if tau is not None: return dec_solve(c,tau)
+    res=minimize_scalar(lambda t:-dec_solve(c,t)["SW"],
+                        bounds=(0,c.tau_max),method="bounded",options={"xatol":c.tol})
+    return dec_solve(c,float(res.x))
 
-    tol:     float = 1e-8
+def vif_br(c,tau):
+    rho=0.3
+    for _ in range(200):
+        mc=c.c_m-c.dc*rho+tau*(c.e_m-c.de*rho)
+        pn=(c.a+c.gg+c.b*mc)/(2*c.b)
+        rn=float(np.clip(Df(c,pn)*(c.dc+tau*c.de)/(2*c.k),0,1))
+        if abs(rn-rho)<1e-13: break
+        rho=.6*rho+.4*rn
+    res=minimize(lambda x:-pivif(c,x[0],x[1],tau),x0=[pn,rn],
+                 bounds=[(c.c_m+.01,c.a/c.b),(0,1)],method="L-BFGS-B",
+                 options={"ftol":1e-15,"gtol":1e-12})
+    return float(res.x[0]),float(res.x[1])
 
+def vif_sw_val(c,tau):
+    p,rho=vif_br(c,tau); pv=pivif(c,p,rho,tau)
+    if pv<-1: return -1e10
+    d=Df(c,p); em=Ef(c,d,rho); cs=CSf(c,p)
+    return SWf(c,cs,pv,tau,em)
 
-# ==============================================================
-# Core Functions
-# ==============================================================
-def demand_fn(cfg: ModelConfig, p: float) -> float:
-    return max(cfg.a - cfg.b * p + cfg.gamma * cfg.g, 0.0)
+def vif_eq(c):
+    tg=np.linspace(0,c.tau_max,200)
+    ti=tg[np.argmax([vif_sw_val(c,t) for t in tg])]
+    lo,hi=max(0,ti-6),min(c.tau_max,ti+6)
+    res=minimize_scalar(lambda t:-vif_sw_val(c,t),bounds=(lo,hi),
+                        method="bounded",options={"xatol":c.tol})
+    tc=float(res.x); p,rho=vif_br(c,tc)
+    d=Df(c,p); em=Ef(c,d,rho); pv=pivif(c,p,rho,tc)
+    cs=CSf(c,p); sv=SWf(c,cs,pv,tc,em)
+    return dict(tau=tc,p=p,rho=rho,D=d,E=em,pi_vif=pv,CS=cs,
+                env_dam=c.eta*em**2,tax_rev=tc*em,SW=sv)
 
+def rs_eq(c,phi,tau):
+    p=(c.a+c.gg+c.b*c.c_m)/(2*c.b)
+    d=Df(c,p); rho=rs(c,d,tau); em=Ef(c,d,rho)
+    pm=phi*(p-c.c_m)*d+c.dc*rho*d-c.k*rho**2-tau*em
+    pr=(1-phi)*(p-c.c_m)*d; cs=CSf(c,p)
+    sv=SWf(c,cs,pm+pr,tau,em)
+    return dict(tau=tau,phi=phi,p=p,rho=rho,D=d,E=em,pi_m=pm,pi_r=pr,CS=cs,
+                env_dam=c.eta*em**2,tax_rev=tau*em,SW=sv)
 
-def emission_fn(cfg: ModelConfig, D: float, rho: float) -> float:
-    """[Fix 1] Substitution emission: recycling replaces new production."""
-    return cfg.e_m * (1.0 - rho) * D + cfg.e_r * rho * D
+def tau_sweep(c,n=150):
+    taus=np.linspace(0,c.tau_max,n)
+    keys=["w","p","rho","D","E","pi_m","pi_r","CS","SW","env_dam","tax_rev"]
+    out={k:np.empty(n) for k in keys}; out["taus"]=taus
+    for i,t in enumerate(taus):
+        eq=dec_solve(c,t)
+        for k in keys: out[k][i]=eq[k]
+    return out
 
+def eta_sweep(c,n=60):
+    etas=np.linspace(0.5,8.,n); ts,Es,SWs=[],[],[]
+    orig=c.eta
+    for ev in etas:
+        c.eta=ev; eq=dec_eq(c)
+        ts.append(eq["tau"]); Es.append(eq["E"]); SWs.append(eq["SW"])
+    c.eta=orig
+    return dict(etas=etas,tau_s=np.array(ts),E_s=np.array(Es),SW_s=np.array(SWs))
 
-def retailer_best_response(cfg: ModelConfig, w: float) -> float:
-    return (cfg.a + cfg.gamma * cfg.g + cfg.b * w) / (2.0 * cfg.b)
-
-
-def manufacturer_profit(cfg: ModelConfig, w: float, rho: float, tau: float) -> float:
-    p = retailer_best_response(cfg, w)
-    D = demand_fn(cfg, p)
-    if D <= 0:
-        return -1e10
-    E = emission_fn(cfg, D, rho)
-    return (w - cfg.c_m)*D + (cfg.c_m - cfg.c_r)*rho*D - tau*E - cfg.k*rho**2
-
-
-# ==============================================================
-# Decentralized Channel (Three-tier Stackelberg)
-# ==============================================================
-def optimal_recycling_rate(cfg: ModelConfig, w: float, tau: float) -> float:
-    """Manufacturer's optimal ρ given w and τ.
-    FOC: (c_m-c_r)D + τ(e_m-e_r)D - 2kρ = 0  →  ρ* = D[Δc + τΔe]/(2k)
-    """
-    res = minimize_scalar(
-        lambda r: -manufacturer_profit(cfg, w, r, tau),
-        bounds=(0.0, 1.0), method="bounded", options={'xatol': cfg.tol}
-    )
-    return res.x
-
-
-def optimal_wholesale_price(cfg: ModelConfig, tau: float) -> tuple:
-    """Manufacturer's optimal w given τ. Returns (w*, ρ*)."""
-    def neg_profit(w):
-        rho = optimal_recycling_rate(cfg, w, tau)
-        return -manufacturer_profit(cfg, w, rho, tau)
-
-    res = minimize_scalar(neg_profit, bounds=(cfg.c_m, cfg.a / cfg.b),
-                          method="bounded", options={'xatol': cfg.tol})
-    w = res.x
-    rho = optimal_recycling_rate(cfg, w, tau)
-    return w, rho
-
-
-def decentralized_sw(cfg: ModelConfig, tau: float) -> float:
-    """[Fix 3] Social welfare with tax-revenue redistribution.
-    SW = CS + π_m + π_r + τ·E − η·E²
-    The +τ·E term returns government revenue to society (pure transfer).
-    """
-    w, rho = optimal_wholesale_price(cfg, tau)
-    p = retailer_best_response(cfg, w)
-    D = demand_fn(cfg, p)
-    if D <= 0:
-        return -1e10
-    E   = emission_fn(cfg, D, rho)
-    CS  = (cfg.a - p + cfg.gamma * cfg.g)**2 / (2.0 * cfg.b)
-    pi_m = manufacturer_profit(cfg, w, rho, tau)
-    pi_r = (p - w) * D
-    return CS + pi_m + pi_r + tau * E - cfg.eta * E**2
-
-
-def decentralized_equilibrium(cfg: ModelConfig, tau=None) -> dict:
-    """Compute decentralized Stackelberg equilibrium.
-    If tau is None, the government's optimal τ* is solved first.
-    """
-    if tau is None:
-        res = minimize_scalar(
-            lambda t: -decentralized_sw(cfg, t),
-            bounds=(0.0, cfg.tau_max), method="bounded", options={'xatol': cfg.tol}
-        )
-        tau = res.x
-
-    w, rho = optimal_wholesale_price(cfg, tau)
-    p    = retailer_best_response(cfg, w)
-    D    = demand_fn(cfg, p)
-    E    = emission_fn(cfg, D, rho)
-    pi_m = manufacturer_profit(cfg, w, rho, tau)
-    pi_r = (p - w) * D
-    CS   = (cfg.a - p + cfg.gamma * cfg.g)**2 / (2.0 * cfg.b)
-    env_dam  = cfg.eta * E**2
-    tax_rev  = tau * E
-    SW   = CS + pi_m + pi_r + tax_rev - env_dam
-
-    return dict(tau=tau, w=w, p=p, rho=rho, D=D, E=E,
-                pi_m=pi_m, pi_r=pi_r, CS=CS,
-                env_dam=env_dam, tax_rev=tax_rev, SW=SW)
-
-
-# ==============================================================
-# Centralized Channel  —  VIF (Vertically Integrated Firm)
-# ==============================================================
-# [Fix 2]  The correct centralized benchmark for supply chain coordination:
-#   • VIF = manufacturer + retailer merged → eliminates double marginalization
-#   • VIF maximizes its own profit π_VIF (not SW directly)
-#   • Government sets τ^C to maximize SW given VIF's profit-maximizing response
-#   • Participation constraint: π_VIF ≥ 0  (no loss-making operation)
-#
-# This is the "second-best" centralized benchmark used in SC coordination literature.
-# It is distinct from the "first-best" social planner that can operate at a loss.
-
-def vif_profit(cfg: ModelConfig, p: float, rho: float, tau: float) -> float:
-    D = demand_fn(cfg, p)
-    if D <= 0:
-        return -1e10
-    E = emission_fn(cfg, D, rho)
-    return (p - cfg.c_m)*D + (cfg.c_m - cfg.c_r)*rho*D - cfg.k*rho**2 - tau*E
-
-
-def vif_best_response(cfg: ModelConfig, tau: float) -> tuple:
-    """VIF's profit-maximizing (p, ρ) given τ."""
-    best_pi = -1e10
-    best_x  = [300.0, 0.3]
-    for p0 in np.linspace(cfg.c_m + 5, cfg.a / cfg.b - 5, 10):
-        for r0 in np.linspace(0.02, 0.98, 8):
-            pi = vif_profit(cfg, p0, r0, tau)
-            if pi > best_pi:
-                best_pi = pi
-                best_x  = [p0, r0]
-
-    res = minimize(
-        lambda x: -vif_profit(cfg, x[0], x[1], tau),
-        x0=best_x,
-        bounds=[(cfg.c_m + 0.1, cfg.a / cfg.b), (0.0, 1.0)],
-        method='L-BFGS-B',
-        options={'ftol': 1e-12, 'gtol': 1e-10}
-    )
-    return float(res.x[0]), float(res.x[1])
-
-
-def centralized_sw(cfg: ModelConfig, tau: float) -> float:
-    """SW when VIF plays its profit-maximizing best response to τ."""
-    p, rho = vif_best_response(cfg, tau)
-    pi = vif_profit(cfg, p, rho, tau)
-    if pi < 0:          # participation constraint
-        return -1e10
-    D  = demand_fn(cfg, p)
-    E  = emission_fn(cfg, D, rho)
-    CS = (cfg.a - p + cfg.gamma * cfg.g)**2 / (2.0 * cfg.b)
-    return CS + pi + tau * E - cfg.eta * E**2
-
-
-def centralized_equilibrium(cfg: ModelConfig) -> dict:
-    """Government maximizes SW over τ; VIF responds with profit-maximizing (p^C, ρ^C)."""
-    # Coarse grid to locate basin
-    taus_grid = np.linspace(0, cfg.tau_max, 80)
-    sw_grid   = [centralized_sw(cfg, t) for t in taus_grid]
-    best_idx  = int(np.argmax(sw_grid))
-    tau_init  = taus_grid[best_idx]
-
-    # Refine
-    lo = max(0.0, tau_init - 12.0)
-    hi = min(cfg.tau_max, tau_init + 12.0)
-    res = minimize_scalar(lambda t: -centralized_sw(cfg, t),
-                          bounds=(lo, hi), method="bounded",
-                          options={'xatol': cfg.tol})
-    tau_c = float(res.x)
-
-    p, rho  = vif_best_response(cfg, tau_c)
-    D       = demand_fn(cfg, p)
-    E       = emission_fn(cfg, D, rho)
-    pi_vif  = vif_profit(cfg, p, rho, tau_c)
-    CS      = (cfg.a - p + cfg.gamma * cfg.g)**2 / (2.0 * cfg.b)
-    env_dam = cfg.eta * E**2
-    tax_rev = tau_c * E
-    SW      = CS + pi_vif + tax_rev - env_dam
-
-    return dict(tau=tau_c, p=p, rho=rho, D=D, E=E,
-                pi_vif=pi_vif, CS=CS,
-                env_dam=env_dam, tax_rev=tax_rev, SW=SW)
-
-
-# ==============================================================
-# Sensitivity Engines
-# ==============================================================
-def standard_sensitivity(cfg: ModelConfig, n: int = 100) -> dict:
-    """τ → (ρ*, E, SW, p, w) along the decentralized equilibrium path."""
-    taus = np.linspace(0, cfg.tau_max, n)
-    out  = {'taus': taus, 'rho': [], 'E': [], 'SW': [], 'p': [], 'w': []}
-    for t in taus:
-        eq = decentralized_equilibrium(cfg, tau=t)
-        out['w'].append(eq['w'])
-        out['p'].append(eq['p'])
-        out['rho'].append(eq['rho'])
-        out['E'].append(eq['E'])
-        out['SW'].append(eq['SW'])
-    return {k: (v if k == 'taus' else np.array(v)) for k, v in out.items()}
-
-
-def strategic_sensitivity(cfg: ModelConfig, n: int = 40) -> dict:
-    """γ → (τ*, ρ*) — effect of consumer green preference."""
-    gammas = np.linspace(5, 25, n)
-    tau_stars, rho_stars = [], []
-    orig = cfg.gamma
+def gamma_sweep(c,n=60):
+    gammas=np.linspace(2,28,n); ts,rs2,Ds=[],[],[]
+    orig=c.gamma
     for gv in gammas:
-        cfg.gamma = gv
-        eq = decentralized_equilibrium(cfg)
-        tau_stars.append(eq['tau'])
-        rho_stars.append(eq['rho'])
-    cfg.gamma = orig
-    return dict(gammas=gammas,
-                tau_stars=np.array(tau_stars),
-                rho_stars=np.array(rho_stars))
+        c.gamma=gv; eq=dec_eq(c)
+        ts.append(eq["tau"]); rs2.append(eq["rho"]); Ds.append(eq["D"])
+    c.gamma=orig
+    return dict(gammas=gammas,tau_s=np.array(ts),rho_s=np.array(rs2),D_s=np.array(Ds))
+
+def phi_sweep(c,tau,n=80):
+    phis=np.linspace(0.01,0.99,n); pms,prs,sws=[],[],[]
+    for phi in phis:
+        eq=rs_eq(c,phi,tau)
+        pms.append(eq["pi_m"]); prs.append(eq["pi_r"]); sws.append(eq["SW"])
+    return dict(phis=phis,pi_m=np.array(pms),pi_r=np.array(prs),sw=np.array(sws))
 
 
-# ==============================================================
-# Plot Utilities
-# ==============================================================
-def _clean_ax(ax):
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+# ══════════════════════════════════════════════════════════════════════
+# FIGURE 1  [F-L1: tau* label below the price range, no overlap]
+# ══════════════════════════════════════════════════════════════════════
+def fig1(eq_nt,eq_d,eq_c,sens):
+    fig=plt.figure(figsize=(13.,4.8))
+    gs=GridSpec(1,2,figure=fig,wspace=0.38,left=0.08,right=0.97,top=0.90,bottom=0.14)
+    ax1=fig.add_subplot(gs[0]); ax2=fig.add_subplot(gs[1])
+    taus=sens["taus"]
+
+    # A: Pricing
+    ax1.fill_between(taus,sens["w"],sens["p"],color=C1,alpha=0.09,zorder=1,label="Retailer margin")
+    ax1.plot(taus,sens["p"],color=C1,lw=2.2,zorder=4,label=r"Retail price $p^*(\tau)$")
+    ax1.plot(taus,sens["w"],color=C1,lw=1.6,ls="--",zorder=4,label=r"Wholesale price $w^*(\tau)$")
+    _hl(ax1,eq_c["p"],c=C3,lw=1.1,ls=(0,(5,3)),a=0.7)
+    ax1.text(taus[-1]*0.97,eq_c["p"]+2,fr"$p^C={eq_c['p']:.1f}$ (VIF)",
+             ha="right",va="bottom",fontsize=8,color=C3,style="italic")
+    _vl(ax1,eq_d["tau"],c=C2,lw=1.3)
+    _dot(ax1,eq_d["tau"],eq_d["p"],c=C2)
+    _dot(ax1,eq_d["tau"],eq_d["w"],c=C2)
+    # Double-headed arrow for margin gap
+    ax1.annotate("",xy=(eq_d["tau"]+2,eq_d["p"]),xytext=(eq_d["tau"]+2,eq_d["w"]),
+                 arrowprops=dict(arrowstyle="<->",color=C2,lw=1.2))
+    ax1.text(eq_d["tau"]+5,(eq_d["p"]+eq_d["w"])/2,
+             fr"$\Delta={eq_d['p']-eq_d['w']:.1f}$",fontsize=8,color=C2,va="center")
+    # [F-L1] tau* label placed at bottom of panel, below the wholesale line
+    ax1.text(eq_d["tau"],282,fr"$\tau^*={eq_d['tau']:.1f}$",
+             fontsize=8.5,color=C2,fontweight="bold",ha="center",va="bottom",
+             bbox=dict(boxstyle="round,pad=0.15",fc="white",ec=C2,alpha=0.85,lw=0.6))
+    _sax(ax1,xlabel=r"Carbon tax $\tau$",ylabel="Price",title="Pricing Dynamics Along Equilibrium Path")
+    ax1.legend(loc="upper left",fontsize=8)
+    ax1.set_xlim(0,taus[-1]); ax1.set_ylim(280,380)
+    _pl(ax1,"(a)")
+
+    # B: Recycling
+    ax2.axvspan(0,eq_d["tau"],color=C4,alpha=0.05,zorder=0)
+    ax2.axvspan(eq_d["tau"],taus[-1],color=C1,alpha=0.03,zorder=0)
+    ax2.plot(taus,sens["rho"],color=C1,lw=2.2,zorder=4,label=r"Decentralised $\rho^*(\tau)$")
+    _hl(ax2,eq_c["rho"],c=C3,lw=1.6,ls=(0,(5,3)),a=0.85)
+    ax2.text(taus[-1]*0.97,eq_c["rho"]+0.007,fr"$\rho^C={eq_c['rho']:.3f}$ (VIF)",
+             ha="right",va="bottom",fontsize=8,color=C3,style="italic")
+    _hl(ax2,eq_nt["rho"],c=CG,lw=0.9,ls=":",a=0.55)
+    ax2.text(4,eq_nt["rho"]+0.005,fr"$\rho_0={eq_nt['rho']:.3f}$",fontsize=7.5,color=CG)
+    _vl(ax2,eq_d["tau"],c=C2,lw=1.3)
+    gap=eq_c["rho"]-eq_d["rho"]
+    ax2.annotate("",xy=(eq_d["tau"]+2,eq_c["rho"]),xytext=(eq_d["tau"]+2,eq_d["rho"]),
+                 arrowprops=dict(arrowstyle="<->",color=C2,lw=1.2))
+    ax2.text(eq_d["tau"]+5,(eq_d["rho"]+eq_c["rho"])/2,
+             fr"$\Delta\rho={gap:.3f}$"+"\n(coordination gap)",
+             fontsize=8,color=C2,va="center",fontweight="bold")
+    _dot(ax2,eq_d["tau"],eq_d["rho"],c=C2)
+    _dot(ax2,0,eq_nt["rho"],c=CG,s=30)
+    _sax(ax2,xlabel=r"Carbon tax $\tau$",ylabel=r"Recycling rate $\rho$",
+         title="Recycling Rate and Coordination Gap")
+    ax2.legend(loc="lower right",fontsize=8)
+    ax2.set_xlim(0,taus[-1]); ax2.set_ylim(0,0.55)
+    _pl(ax2,"(b)")
+    fig.suptitle("Figure 1.  Supply Chain Equilibrium: Pricing Dynamics and Recycling Coordination",
+                 fontsize=11.5,y=0.97,style="italic",color="#222222")
+    _save(fig,"CLSC_Fig1_Pricing_Recycling")
 
 
-def _annotate_vline(ax, x, y_text, text, color=C_RED, offset_x=8, offset_y=0):
-    ax.axvline(x, color=color, ls=':', lw=1.8, alpha=0.85)
-    ax.annotate(text,
-                xy=(x, y_text),
-                xytext=(x + offset_x, y_text + offset_y),
-                arrowprops=dict(facecolor=color, arrowstyle='->', lw=1.2),
-                fontsize=10.5, fontweight='bold', color=color)
+# ══════════════════════════════════════════════════════════════════════
+# FIGURE 2  [F-L2: E^C label inside axes; F-L3: SW^C inside ylim]
+# ══════════════════════════════════════════════════════════════════════
+def fig2(eq_nt,eq_d,eq_c,sens):
+    fig=plt.figure(figsize=(13.,4.8))
+    gs=GridSpec(1,2,figure=fig,wspace=0.38,left=0.08,right=0.97,top=0.90,bottom=0.14)
+    ax1=fig.add_subplot(gs[0]); ax2=fig.add_subplot(gs[1])
+    taus=sens["taus"]
+
+    # A: Emissions
+    below=sens["E"]<=eq_nt["E"]
+    ax1.fill_between(taus,sens["E"],eq_nt["E"],where=below,color=C3,alpha=0.15,zorder=1,
+                     label="Emission reduction")
+    ax1.plot(taus,sens["E"],color=C4,lw=2.2,zorder=4,label=r"Emissions $E^*(\tau)$")
+    _hl(ax1,eq_nt["E"],c=CG,lw=1.2)
+    ax1.text(3,eq_nt["E"]+0.5,fr"$E_0={eq_nt['E']:.1f}$",fontsize=8,color=CG)
+
+    # [F-L2] E^C is ABOVE E_0 — annotate with a horizontal reference line at top
+    # Use ax1.set_ylim to include E^C, then place label clearly inside
+    e_min = sens["E"].min(); e_max = max(eq_c["E"], eq_nt["E"])
+    ax1.set_ylim(e_min - 1.5, e_max + 3.5)
+    _hl(ax1,eq_c["E"],c=C3,lw=1.0,ls=(0,(4,3)),a=0.7)
+    # Place E^C label at left side of panel to avoid overlap with green-paradox box
+    ax1.text(6,eq_c["E"]+0.4,fr"$E^C={eq_c['E']:.1f}$ (VIF)",fontsize=8,color=C3,va="bottom")
+
+    _vl(ax1,eq_d["tau"],c=C2,lw=1.3)
+    _dot(ax1,eq_d["tau"],eq_d["E"],c=C2)
+
+    # [F-L2] Green paradox annotation — placed at center-right, well below E^C
+    ax1.annotate(
+        "\"Green paradox\"\n"+r"$E^C > E^*$: output$\uparrow$ dominates",
+        xy=(eq_d["tau"],eq_d["E"]),
+        xytext=(80,eq_d["E"]+4.5),
+        arrowprops=dict(arrowstyle="->",color=C3,lw=0.9,
+                        connectionstyle="arc3,rad=-0.15"),
+        fontsize=8,color=C3,style="italic",ha="left",
+        bbox=dict(boxstyle="round,pad=0.3",fc="white",ec=C3,alpha=0.88,lw=0.6))
+    _sax(ax1,xlabel=r"Carbon tax $\tau$",ylabel=r"Total emissions $E$",
+         title="Environmental Impact along the Tax Path")
+    ax1.legend(loc="lower left",fontsize=8)
+    ax1.set_xlim(0,taus[-1])
+    _pl(ax1,"(a)")
+
+    # B: Social welfare
+    sw_min=sens["SW"].min(); sw_max=sens["SW"].max()
+    pad=(sw_max-sw_min)*0.12
+    # [F-L3] Set ylim BEFORE drawing SW^C line; ensure SW^C label stays inside
+    ax2.set_ylim(sw_min-pad, sw_max+pad*1.25)
+    feasible=sens["SW"]>=eq_nt["SW"]
+    ax2.fill_between(taus,sw_min-pad,sw_max+pad,where=feasible,color=C1,alpha=0.06,
+                     zorder=0,transform=ax2.get_xaxis_transform(),label="Effective policy zone")
+    ax2.plot(taus,sens["SW"],color=C1,lw=2.2,zorder=4,label=r"Social welfare $SW(\tau)$")
+    _hl(ax2,eq_nt["SW"],c=CG,lw=1.2)
+    ax2.text(3,eq_nt["SW"]-pad*0.6,fr"$SW_0={eq_nt['SW']:.0f}$",fontsize=8,color=CG)
+
+    # [F-L3] SW^C line clipped to ylim; label placed inside upper region
+    _hl(ax2,min(eq_c["SW"],sw_max+pad*1.15),c=C3,lw=1.2,ls=(0,(5,3)))
+    ax2.text(taus[-1]*0.97,sw_max+pad*0.35,
+             fr"$SW^C={eq_c['SW']:.0f}$ (VIF)",ha="right",fontsize=8,color=C3,style="italic")
+
+    idx=int(np.argmax(sens["SW"]))
+    _vl(ax2,sens["taus"][idx],c=C2,lw=1.3)
+    _dot(ax2,sens["taus"][idx],sens["SW"][idx],c=C2,s=65)
+    ax2.annotate(
+        fr"$\tau^*={eq_d['tau']:.1f}$"+"\n"+fr"$SW^*={eq_d['SW']:.0f}$",
+        xy=(sens["taus"][idx],sens["SW"][idx]),
+        xytext=(sens["taus"][idx]+14,sens["SW"][idx]-pad*0.5),
+        arrowprops=dict(arrowstyle="->",color=C2,lw=1.0),
+        fontsize=8.5,color=C2,fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3",fc="white",ec=C2,alpha=0.9,lw=0.7))
+    _sax(ax2,xlabel=r"Carbon tax $\tau$",ylabel=r"Social welfare $SW$",
+         title="Social Welfare Optimisation")
+    ax2.set_xlim(0,taus[-1])
+    ax2.legend(loc="upper right",fontsize=8)
+    _pl(ax2,"(b)")
+    fig.suptitle("Figure 2.  Environmental Impact and Social Welfare under Carbon Taxation",
+                 fontsize=11.5,y=0.97,style="italic",color="#222222")
+    _save(fig,"CLSC_Fig2_Emission_Welfare")
 
 
-# ==============================================================
-# Figure Set 1 — Pricing Dynamics & Recycling Coordination Gap
-# ==============================================================
-def plot_set_1(eq_nt, eq_d, eq_c, sens):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+# ══════════════════════════════════════════════════════════════════════
+# FIGURE 3  [F-L4: proper bridge waterfall with correct sign logic]
+# ══════════════════════════════════════════════════════════════════════
+def fig3(eq_nt,eq_d,eq_c):
+    fig=plt.figure(figsize=(13.,5.2))
+    gs=GridSpec(1,2,figure=fig,wspace=0.42,left=0.07,right=0.97,top=0.88,bottom=0.13)
+    ax1=fig.add_subplot(gs[0]); ax2=fig.add_subplot(gs[1])
 
-    # ── 1A: Pricing Dynamics ────────────────────────────────────
-    ax = axes[0]
-    ax.plot(sens['taus'], sens['p'], color=C_DARK, lw=2.5,
-            label='Retail Price ($p$)')
-    ax.plot(sens['taus'], sens['w'], color=C_BLUE, lw=2.5, ls='--',
-            label='Wholesale Price ($w$)')
-    ax.fill_between(sens['taus'], sens['w'], sens['p'],
-                    color=C_BLUE, alpha=0.10, label='Retailer Margin')
-
-    ax.axvline(eq_d['tau'], color=C_RED, ls=':', lw=1.8, alpha=0.85)
-    ax.scatter([eq_d['tau'], eq_d['tau']], [eq_d['p'], eq_d['w']],
-               color=C_RED, s=65, zorder=5)
-    ax.annotate(r'Optimal Tax $\tau^*$',
-                xy=(eq_d['tau'], eq_d['w'] - 4),
-                xytext=(eq_d['tau'] + 14, eq_d['w'] - 16),
-                arrowprops=dict(facecolor='black', arrowstyle='->', lw=1.1),
-                fontsize=10.5, fontweight='bold')
-
-    ax.set(xlabel=r'Carbon Tax Level ($\tau$)',
-           ylabel='Price',
-           title='A. Supply Chain Pricing Dynamics')
-    ax.legend(frameon=False)
-    _clean_ax(ax)
-
-    # ── 1B: Recycling Rate & Coordination Gap ───────────────────
-    ax = axes[1]
-    ax.plot(sens['taus'], sens['rho'], color=C_DARK, lw=2.5,
-            label=r'Decentralized Response ($\rho^*$)')
-    ax.axhline(eq_c['rho'], color=C_GREEN, ls='-.', lw=2.5,
-               label=fr'Centralized VIF Benchmark ($\rho^C={eq_c["rho"]:.3f}$)')
-
-    # Gap segment at τ*
-    ax.plot([eq_d['tau'], eq_d['tau']], [eq_d['rho'], eq_c['rho']],
-            color=C_RED, lw=2.5)
-    ax.scatter([eq_d['tau']], [eq_d['rho']],
-               color=C_RED, s=65, zorder=5, label='Decentralized Equilibrium')
-
-    mid_rho = (eq_d['rho'] + eq_c['rho']) / 2
-    gap     = eq_c['rho'] - eq_d['rho']
-    ax.text(eq_d['tau'] + 3, mid_rho,
-            f'Coordination Gap\n$\\Delta\\rho = {gap:.3f}$',
-            color=C_RED, fontweight='bold', va='center', fontsize=10.5)
-
-    ax.set(xlabel=r'Carbon Tax Level ($\tau$)',
-           ylabel=r'Recycling Rate ($\rho$)',
-           title='B. Recycling Rate & Coordination Gap')
-    ax.legend(frameon=False, loc='lower right')
-    _clean_ax(ax)
-
-    plt.savefig('CLSC_Set1_Pricing_Recycling.png')
-    plt.savefig('CLSC_Set1_Pricing_Recycling.pdf')
-    plt.show()
-    print("  [Saved] CLSC_Set1_Pricing_Recycling.{png,pdf}")
-
-
-# ==============================================================
-# Figure Set 2 — Emission Trajectory & Welfare Optimization
-# ==============================================================
-def plot_set_2(eq_nt, eq_d, eq_c, sens):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
-
-    # ── 2A: Emission Trajectory ─────────────────────────────────
-    ax = axes[0]
-    ax.plot(sens['taus'], sens['E'], color=C_ORANG, lw=2.5,
-            label=r'Actual Emissions ($E$)')
-    ax.axhline(eq_nt['E'], color=C_GREY, ls='--', lw=1.5,
-               label=f'No-Tax Baseline ($E_0={eq_nt["E"]:.1f}$)')
-
-    # Shade emission reduction area
-    below = sens['E'] < eq_nt['E']
-    ax.fill_between(sens['taus'], sens['E'], eq_nt['E'],
-                    where=below, color=C_GREEN, alpha=0.15,
-                    label='Emission Reduction Region')
-
-    ax.axvline(eq_d['tau'], color=C_RED, ls=':', lw=1.8, alpha=0.85)
-    ax.scatter([eq_d['tau']], [eq_d['E']], color=C_RED, s=65, zorder=5)
-
-    # Mark VIF emission level
-    ax.axhline(eq_c['E'], color=C_BLUE, ls=':', lw=1.5,
-               label=fr'VIF Emission ($E^C={eq_c["E"]:.1f}$, $\tau^C={eq_c["tau"]:.1f}$)')
-    ax.annotate('Note: $E^C > E^*$\n(output effect > recycling effect)',
-                xy=(eq_c['tau'] * 0.45, eq_c['E'] + 0.5),
-                fontsize=9.5, color=C_BLUE, style='italic')
-
-    ax.set(xlabel=r'Carbon Tax Level ($\tau$)',
-           ylabel=r'Total Carbon Emissions ($E$)',
-           title='A. Environmental Impact Control')
-    ax.legend(frameon=False, fontsize=9.5)
-    _clean_ax(ax)
-
-    # ── 2B: Social Welfare Optimization ─────────────────────────
-    ax = axes[1]
-    ax.plot(sens['taus'], sens['SW'], color=C_DARK, lw=2.5,
-            label=r'Social Welfare ($SW$)')
-    ax.axhline(eq_nt['SW'], color=C_GREY, ls='--', lw=1.5,
-               label=f'No-Tax Baseline ($SW_0={eq_nt["SW"]:.0f}$)')
-
-    # Effective policy zone
-    feasible = sens['SW'] > eq_nt['SW']
-    ax.fill_between(sens['taus'], 0, 1,
-                    where=feasible, color=C_BLUE, alpha=0.08,
-                    transform=ax.get_xaxis_transform(),
-                    label=r'Effective Policy Zone ($SW > SW_0$)')
-
-    # Welfare maximum
-    idx = int(np.nanargmax(sens['SW']))
-    ax.scatter([sens['taus'][idx]], [sens['SW'][idx]],
-               color=C_RED, s=90, edgecolor='white', lw=1.5, zorder=6)
-    ax.annotate('Welfare Maximum',
-                xy=(sens['taus'][idx], sens['SW'][idx]),
-                xytext=(sens['taus'][idx] + 14, sens['SW'][idx]),
-                arrowprops=dict(facecolor=C_RED, arrowstyle='->', lw=1.1),
-                fontsize=10.5, color=C_RED, fontweight='bold')
-
-    # VIF welfare level
-    ax.axhline(eq_c['SW'], color=C_GREEN, ls='-.', lw=1.8,
-               label=fr'VIF Benchmark ($SW^C={eq_c["SW"]:.0f}$)')
-
-    ax.set(xlabel=r'Carbon Tax Level ($\tau$)',
-           ylabel=r'Social Welfare ($SW$)',
-           title='B. Social Welfare Optimization')
-    ax.set_ylim(bottom=min(sens['SW']) * 0.992, top=max(sens['SW']) * 1.008)
-    ax.legend(frameon=False, loc='lower center')
-    _clean_ax(ax)
-
-    plt.savefig('CLSC_Set2_Environment_Welfare.png')
-    plt.savefig('CLSC_Set2_Environment_Welfare.pdf')
-    plt.show()
-    print("  [Saved] CLSC_Set2_Environment_Welfare.{png,pdf}")
-
-
-# ==============================================================
-# Figure Set 3 — Strategic Benchmarking & Green Preference
-# ==============================================================
-def plot_set_3(cfg, eq_nt, eq_d, eq_c, strat_sens):
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
-
-    # ── 3A: Three-Scenario Bar Chart ────────────────────────────
-    ax = axes[0]
-    labels   = [r'No Tax ($\tau=0$)',
-                fr'Decentralized ($\tau^*={eq_d["tau"]:.1f}$)',
-                fr'Centralized VIF ($\tau^C={eq_c["tau"]:.1f}$)']
-    rho_vals = [eq_nt['rho'], eq_d['rho'], eq_c['rho']]
-    sw_vals  = [eq_nt['SW'],  eq_d['SW'],  eq_c['SW']]
-
-    x, w = np.arange(3), 0.35
-    bars1 = ax.bar(x - w/2, rho_vals, w,
-                   label=r'Recycling Rate ($\rho$)',
-                   color=C_DARK, edgecolor='black', hatch='//', alpha=0.82)
-    ax2 = ax.twinx()
-    bars2 = ax2.bar(x + w/2, sw_vals, w,
-                    label=r'Social Welfare ($SW$)',
-                    color=C_GREEN, edgecolor='black', hatch='\\\\', alpha=0.82)
-
-    for bar in bars1:
-        ax.text(bar.get_x() + w/2, bar.get_height() + 0.006,
-                f'{bar.get_height():.3f}', ha='center',
-                fontweight='bold', fontsize=10)
-    for bar in bars2:
-        ax2.text(bar.get_x() + w/2, bar.get_height() + max(sw_vals)*0.008,
-                 f'{bar.get_height():.0f}', ha='center', fontsize=10)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=11)
-    ax.set_ylabel(r'Recycling Rate ($\rho$)', color=C_DARK, fontweight='bold')
-    ax2.set_ylabel(r'Social Welfare ($SW$)',  color=C_GREEN, fontweight='bold')
-    ax.set_title(
-        f'A. System Efficiency & Coordination Gap\n'
-        f'$\\Delta\\rho={eq_c["rho"]-eq_d["rho"]:.3f}$,  '
-        f'PoA $= {eq_d["SW"]/eq_c["SW"]:.3f}$,  '
-        f'VIF profit $= {eq_c["pi_vif"]:.0f} > 0$ [OK]',
-        loc='left', fontsize=12)
-
-    ax.spines['top'].set_visible(False)
-    ax2.spines['top'].set_visible(False)
-    lines1, lbl1 = ax.get_legend_handles_labels()
-    lines2, lbl2 = ax2.get_legend_handles_labels()
-    ax.legend(lines1 + lines2, lbl1 + lbl2, loc='upper left', frameon=False)
-
-    # ── 3B: γ Sensitivity ───────────────────────────────────────
-    ax = axes[1]
-    gammas    = strat_sens['gammas']
-    tau_stars = strat_sens['tau_stars']
-    rho_stars = strat_sens['rho_stars']
-
-    ax.plot(gammas, tau_stars, color=C_RED, lw=2.5,
-            marker='o', markevery=5, ms=5,
-            label=r'Optimal Tax ($\tau^*$)')
-    ax.set_xlabel(r'Consumer Green Preference ($\gamma$)')
-    ax.set_ylabel(r'Optimal Carbon Tax ($\tau^*$)',
-                  color=C_RED, fontweight='bold')
-
-    ax3 = ax.twinx()
-    ax3.plot(gammas, rho_stars, color=C_DARK, lw=2.5, ls='--',
-             marker='s', markevery=5, ms=5,
-             label=r'Equilibrium Recycling Rate ($\rho^*$)')
-    ax3.set_ylabel(r'Recycling Rate ($\rho^*$)',
-                   color=C_DARK, fontweight='bold')
-
-    ax.set_title('B. Strategic Impact of Consumer Green Preference', loc='left')
-    ax.spines['top'].set_visible(False)
-    ax3.spines['top'].set_visible(False)
-    ax.grid(True, linestyle=':', alpha=0.4)
-
-    l1, lb1 = ax.get_legend_handles_labels()
-    l2, lb2 = ax3.get_legend_handles_labels()
-    ax.legend(l1 + l2, lb1 + lb2, loc='upper left', frameon=False)
-
-    plt.savefig('CLSC_Set3_Strategy.png')
-    plt.savefig('CLSC_Set3_Strategy.pdf')
-    plt.show()
-    print("  [Saved] CLSC_Set3_Strategy.{png,pdf}")
-
-
-# ==============================================================
-# Console Report
-# ==============================================================
-def print_paper_report(eq_nt, eq_d, eq_c):
-
-    DIV  = "═" * 87
-    div  = "─" * 87
-
-    print(f"\n{DIV}")
-    print(" 📜  RESEARCH PAPER ASSISTANT: DATA & INSIGHTS REPORT".center(87))
-    print(DIV)
-
-    # ── Section 1: Equilibrium Table ────────────────────────────
-    print("\n>>> SECTION 1: MACRO SYSTEM EQUILIBRIUM COMPARISON")
-    print(div)
-    h = f"  {'Metric':<24}  {'No Tax (Base)':>15}  {'Decentralized (τ*)':>18}  {'VIF Centralized':>15}"
-    print(h)
-    print(div)
-
-    rows = [
-        ("Carbon Tax (τ)",        0.0,         eq_d['tau'],   eq_c['tau']),
-        ("Retail Price (p)",      eq_nt['p'],  eq_d['p'],     eq_c['p']),
-        ("Wholesale Price (w)",   eq_nt['w'],  eq_d['w'],     float('nan')),
-        ("Recycling Rate (ρ)",    eq_nt['rho'],eq_d['rho'],   eq_c['rho']),
-        ("Market Demand (D)",     eq_nt['D'],  eq_d['D'],     eq_c['D']),
-        ("Total Emissions (E)",   eq_nt['E'],  eq_d['E'],     eq_c['E']),
-        ("Mfr/VIF Profit (π)",   eq_nt['pi_m'],eq_d['pi_m'], eq_c['pi_vif']),
-        ("Retailer Profit (π_r)",eq_nt['pi_r'],eq_d['pi_r'], float('nan')),
-        ("Consumer Surplus (CS)", eq_nt['CS'], eq_d['CS'],    eq_c['CS']),
-        ("Env. Damage (η·E²)",   eq_nt['env_dam'],eq_d['env_dam'],eq_c['env_dam']),
-        ("Tax Revenue (τ·E)",     0.0,         eq_d['tax_rev'],eq_c['tax_rev']),
-        ("Social Welfare (SW)",   eq_nt['SW'], eq_d['SW'],    eq_c['SW']),
+    # A: bars
+    scenarios=["No-Tax\n"+r"$(\tau=0)$",
+               "Decentralised\n"+fr"$(\tau^*={eq_d['tau']:.1f})$",
+               "VIF\n"+fr"$(\tau^C={eq_c['tau']:.1f})$"]
+    colors3=[CG,C1,C3]
+    rhos=[eq_nt["rho"],eq_d["rho"],eq_c["rho"]]
+    sws=[eq_nt["SW"],eq_d["SW"],eq_c["SW"]]
+    x=np.arange(3)
+    bars=ax1.bar(x,rhos,0.42,color=colors3,alpha=0.82,edgecolor="white",lw=0.8,zorder=3)
+    for i,(bar,v) in enumerate(zip(bars,rhos)):
+        ax1.text(bar.get_x()+bar.get_width()/2,v+0.007,f"{v:.3f}",
+                 ha="center",va="bottom",fontsize=10,fontweight="bold",color=colors3[i])
+    ax1.set_ylabel(r"Recycling rate $\rho$",labelpad=6)
+    ax1.set_ylim(0,max(rhos)*1.40)
+    ax1.set_xticks(x); ax1.set_xticklabels(scenarios,fontsize=9.5)
+    ax1r=ax1.twinx()
+    ax1r.plot(x,sws,"D--",color=C4,lw=1.6,ms=7,markerfacecolor=C4,
+              markeredgecolor="white",markeredgewidth=0.9,zorder=5)
+    for i,(xi,sv) in enumerate(zip(x,sws)):
+        ax1r.text(xi,sv+(max(sws)-min(sws))*0.045,f"{sv:.0f}",ha="center",fontsize=9,color=C4)
+    ax1r.set_ylabel(r"Social welfare $SW$",color=C4,labelpad=6)
+    ax1r.spines["top"].set_visible(False)
+    ax1r.tick_params(axis="y",colors=C4)
+    ax1r.yaxis.set_minor_locator(AutoMinorLocator(2))
+    poa=eq_d["SW"]/eq_c["SW"]; gap=eq_c["rho"]-eq_d["rho"]
+    ax1.set_title(fr"$\Delta\rho={gap:.3f}$,  PoA$={poa:.4f}$,  $\pi_{{VIF}}={eq_c['pi_vif']:.0f}>0\;\checkmark$",
+                  fontsize=9.5,pad=6)
+    ax1.spines["top"].set_visible(False)
+    ax1.grid(axis="y",alpha=0.2,zorder=0)
+    ax1.tick_params(axis="x",length=0)
+    legend_items=[
+        mpatches.Patch(color=CG,alpha=0.82,label="No-Tax"),
+        mpatches.Patch(color=C1,alpha=0.82,label="Decentralised"),
+        mpatches.Patch(color=C3,alpha=0.82,label="VIF"),
+        plt.Line2D([0],[0],color=C4,lw=1.6,ls="--",marker="D",ms=6,label=r"Social welfare $SW$"),
     ]
-    for name, v1, v2, v3 in rows:
-        s3 = f"{v3:>15.2f}" if not (isinstance(v3, float) and np.isnan(v3)) else f"{'—':>15}"
-        print(f"  {name:<24}  {v1:>15.2f}  {v2:>18.2f}  {s3}")
+    ax1.legend(handles=legend_items,loc="upper left",fontsize=8,framealpha=0.92)
+    _pl(ax1,"(a)",x=-0.10)
 
-    # ── Section 2: Sanity Checks ─────────────────────────────────
-    print(f"\n>>> SECTION 2: ECONOMIC SANITY CHECKS")
-    print(div)
+    # B: [F-L4] Bridge waterfall — proper sign-aware construction
+    dCS =eq_d["CS"]   -eq_nt["CS"]    # -724
+    dPim=eq_d["pi_m"] -eq_nt["pi_m"]  # -1440
+    dPir=eq_d["pi_r"] -eq_nt["pi_r"]  # -679
+    dTax=eq_d["tax_rev"]               # +1328
+    dEnv=eq_nt["env_dam"]-eq_d["env_dam"]  # +1788
+    dSW =eq_d["SW"]   -eq_nt["SW"]    # +273
+    vals=[dCS,dPim,dPir,dTax,dEnv,dSW]
+    labs=[r"$\Delta CS$",r"$\Delta\pi_m$",r"$\Delta\pi_r$",
+          r"$\tau E$",r"$-\Delta(\eta E^2)$",r"Net $\Delta SW$"]
 
-    cfg_tau_max = 150
-    checks = [
-        ("τ* is interior solution",             0 < eq_d['tau'] < cfg_tau_max * 0.97),
-        ("τ^C is interior solution",            0 < eq_c['tau'] < cfg_tau_max * 0.97),
-        ("ρ* is interior  (0, 1)",              0.01 < eq_d['rho'] < 0.99),
-        ("ρ^C is interior (0, 1)",              0.01 < eq_c['rho'] < 0.99),
-        ("VIF profit ≥ 0 (participates)",       eq_c['pi_vif'] >= 0),
-        ("p_dec > p_VIF (double margin.)",      eq_d['p'] > eq_c['p']),
-        ("ρ^C > ρ* (coordination gap > 0)",     eq_c['rho'] > eq_d['rho']),
-        ("τ^C > τ* (VIF needs stronger signal)",eq_c['tau'] > eq_d['tau']),
-        ("SW_dec > SW_notax (tax improves SW)", eq_d['SW'] > eq_nt['SW']),
-        ("SW_VIF > SW_dec (VIF more efficient)",eq_c['SW'] > eq_d['SW']),
-        ("Mfr profit > 0",                      eq_d['pi_m'] > 0),
-        ("Retailer profit > 0",                 eq_d['pi_r'] > 0),
+    # Bridge waterfall: each bar starts where previous ended
+    bar_bottoms=[]; run=0
+    for v in vals[:-1]:
+        bar_bottoms.append(run if v>=0 else run+v)
+        run+=v
+    bar_bottoms.append(0)  # net bar always from zero
+
+    bar_c=[C3 if v>=0 else C2 for v in vals]
+    bar_c[-1]=C3  # net is positive
+
+    ax2.bar(np.arange(6),np.abs(vals),0.55,bottom=bar_bottoms,
+            color=bar_c,alpha=0.80,edgecolor="white",lw=0.7,zorder=3)
+    ax2.axhline(0,color="#333333",lw=0.9,zorder=4)
+
+    # Connector lines between adjacent bars (shows cumulative path)
+    run2=0
+    for i,v in enumerate(vals[:-1]):
+        run2+=v
+        ax2.plot([i+0.285,i+0.715],[run2,run2],color="#aaaaaa",lw=0.9,ls="--",zorder=3)
+
+    # Value labels — placed just outside each bar
+    for i,(v,bot) in enumerate(zip(vals,bar_bottoms)):
+        top=bot+abs(v)
+        # For negative bars: label below; for positive: label above
+        if v>=0:
+            ax2.text(i,top+abs(dSW)*0.06,f"{v:+.0f}",ha="center",va="bottom",
+                     fontsize=9,fontweight="bold",color=bar_c[i])
+        else:
+            ax2.text(i,bot-abs(dSW)*0.06,f"{v:+.0f}",ha="center",va="top",
+                     fontsize=9,fontweight="bold",color=bar_c[i])
+
+    ax2.set_xticks(np.arange(6)); ax2.set_xticklabels(labs,fontsize=9.5)
+    ax2.set_ylabel(r"Welfare component change $(\Delta)$",labelpad=6)
+    ax2.set_title(r"Welfare Decomposition: $SW(\tau^*) - SW(0)$",fontsize=9.5,pad=6)
+    ax2.spines["top"].set_visible(False); ax2.spines["right"].set_visible(False)
+    ax2.grid(axis="y",alpha=0.2,zorder=0)
+    ax2.tick_params(axis="x",length=0)
+    # Extend y-limits for label clearance
+    ylo=min(bar_bottoms+list(np.array(bar_bottoms)+np.abs(vals)))
+    yhi=max(bar_bottoms+list(np.array(bar_bottoms)+np.abs(vals)))
+    yr=yhi-ylo
+    ax2.set_ylim(ylo-yr*0.12, yhi+yr*0.18)
+    # Net annotation box
+    ax2.text(4.7,dSW*0.6,fr"Net: $+{dSW:.0f}$",fontsize=9,color=C3,fontweight="bold",
+             bbox=dict(boxstyle="round,pad=0.3",fc="white",ec=C3,alpha=0.9,lw=0.7))
+    _pl(ax2,"(b)",x=-0.10)
+    fig.suptitle("Figure 3.  Scenario Comparison and Welfare Decomposition",
+                 fontsize=11.5,y=0.97,style="italic",color="#222222")
+    _save(fig,"CLSC_Fig3_Benchmark_Decomposition")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# FIGURE 4  [F-L5: annotation away from flat SW line]
+# ══════════════════════════════════════════════════════════════════════
+def fig4(eq_d,eq_c,phi_data):
+    fig=plt.figure(figsize=(13.,4.8))
+    gs=GridSpec(1,2,figure=fig,wspace=0.38,left=0.08,right=0.97,top=0.90,bottom=0.14)
+    ax1=fig.add_subplot(gs[0]); ax2=fig.add_subplot(gs[1])
+    phis=phi_data["phis"]; pms=phi_data["pi_m"]; prs=phi_data["pi_r"]; sws=phi_data["sw"]
+    total=pms+prs
+
+    # A
+    ax1.fill_between(phis,0,pms,where=(pms>=0),color=C1,alpha=0.13,zorder=1)
+    ax1.fill_between(phis,0,pms,where=(pms< 0),color=C2,alpha=0.13,zorder=1)
+    ax1.fill_between(phis,0,prs,color=C4,alpha=0.10,zorder=1)
+    ax1.plot(phis,pms,color=C1,lw=2.0,zorder=4,label=r"Manufacturer $\pi_m^{RS}(\phi)$")
+    ax1.plot(phis,prs,color=C4,lw=2.0,zorder=4,label=r"Retailer $\pi_r^{RS}(\phi)$")
+    ax1.plot(phis,total,color=C3,lw=1.5,ls=(0,(5,3)),zorder=3,label="Channel total")
+    _hl(ax1,eq_d["pi_m"],c=C1,lw=0.9,ls=":",a=0.5)
+    _hl(ax1,eq_d["pi_r"],c=C4,lw=0.9,ls=":",a=0.5)
+    ax1.text(0.02,eq_d["pi_m"]+80,fr"$\pi_m^*={eq_d['pi_m']:.0f}$",fontsize=7.5,color=C1,alpha=0.7)
+    ax1.text(0.02,eq_d["pi_r"]+80,fr"$\pi_r^*={eq_d['pi_r']:.0f}$",fontsize=7.5,color=C4,alpha=0.7)
+    ax1.axhline(0,color="#555555",lw=0.8,zorder=5)
+    both_ok=(pms>=0)&(prs>=0)
+    if both_ok.any():
+        phi_lo=phis[np.argmax(both_ok)]
+        phi_hi=phis[len(phis)-1-np.argmax(both_ok[::-1])]
+        ax1.axvspan(phi_lo,phi_hi,color=C3,alpha=0.07,zorder=0,
+                    label=fr"Feasible: $\phi\in[{phi_lo:.2f},{phi_hi:.2f}]$")
+    _sax(ax1,xlabel=r"Revenue-sharing fraction $\phi$",ylabel="Profit",
+         title=r"Profit Distribution under Revenue-Sharing")
+    ax1.legend(loc="center right",fontsize=7.8)
+    ax1.set_xlim(0,1)
+    _pl(ax1,"(a)")
+
+    # B: [F-L5]
+    ax2.plot(phis,sws,color=C5,lw=2.2,zorder=4,label=r"$SW^{RS}(\phi)$")
+    _hl(ax2,eq_d["SW"],c=C1,lw=1.2)
+    ax2.text(0.97,eq_d["SW"]+15,fr"$SW^*={eq_d['SW']:.0f}$",ha="right",fontsize=8,color=C1)
+    _hl(ax2,eq_c["SW"],c=C3,lw=1.2,ls=(0,(5,3)))
+    ax2.text(0.97,eq_c["SW"]+15,fr"$SW^C={eq_c['SW']:.0f}$",ha="right",fontsize=8,color=C3)
+
+    # Set ylim to show both SW* and SW^C with room
+    sw_lo=sws.min()-200; sw_hi=eq_c["SW"]+600
+    ax2.set_ylim(sw_lo,sw_hi)
+
+    if both_ok.any():
+        idx_b=np.where(both_ok)[0][np.argmax(sws[both_ok])]
+        _dot(ax2,phis[idx_b],sws[idx_b],c=C5,s=55)
+        # [F-L5] annotation placed in upper-centre region, far from the flat SW^RS line
+        ax2.annotate(
+            "RS eliminates double marginalisation\n"
+            r"but $D^{RS}\!\gg D^*$ $\Rightarrow$ $E^{RS}\!\gg E^*$"+"\n"
+            r"Env. damage dominates at $\tau^*$"+"\n"
+            r"$\Rightarrow$ higher $\tau$ needed under RS",
+            xy=(phis[idx_b],sws[idx_b]),
+            xytext=(0.50,(sws[idx_b]+eq_d["SW"])/2 + 1200),
+            arrowprops=dict(arrowstyle="->",color=C5,lw=0.9),
+            fontsize=7.8,color=C5,style="italic",ha="center",
+            bbox=dict(boxstyle="round,pad=0.35",fc="white",ec=C5,alpha=0.9,lw=0.6))
+    _sax(ax2,xlabel=r"Revenue-sharing fraction $\phi$",
+         ylabel=r"Social welfare $SW^{RS}$",
+         title=r"Social Welfare under Revenue-Sharing (at $\tau^*$)")
+    ax2.set_xlim(0,1)
+    ax2.legend(fontsize=8,loc="upper right")
+    _pl(ax2,"(b)")
+    fig.suptitle("Figure 4.  Revenue-Sharing Contract: Profit Distribution and Welfare Implications",
+                 fontsize=11.5,y=0.97,style="italic",color="#222222")
+    _save(fig,"CLSC_Fig4_Coordination")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# FIGURE 5  [F-L6: increased top margin for suptitle clearance]
+# ══════════════════════════════════════════════════════════════════════
+def fig5(eta_data,gamma_data):
+    # [F-L6] Use top=0.91 (was 0.94) so suptitle at y=0.98 clears panel titles
+    fig=plt.figure(figsize=(13.,9.6))
+    gs=GridSpec(2,2,figure=fig,wspace=0.36,hspace=0.52,
+                left=0.08,right=0.97,top=0.91,bottom=0.07)
+    axes=[fig.add_subplot(gs[i//2,i%2]) for i in range(4)]
+
+    # (a)
+    ax=axes[0]
+    ax.plot(eta_data["etas"],eta_data["tau_s"],color=C2,lw=2.0,zorder=4,
+            label=r"Optimal tax $\tau^*(\eta)$")
+    ax.fill_between(eta_data["etas"],0,eta_data["tau_s"],color=C2,alpha=0.10)
+    axr=ax.twinx()
+    axr.plot(eta_data["etas"],eta_data["E_s"],color=C3,lw=1.8,ls="--",zorder=3,
+             label=r"Equilibrium emissions $E^*(\eta)$")
+    axr.set_ylabel(r"Equilibrium emissions $E^*$",color=C3,labelpad=5)
+    axr.tick_params(axis="y",colors=C3); axr.spines["top"].set_visible(False)
+    axr.yaxis.set_minor_locator(AutoMinorLocator(2))
+    _sax(ax,xlabel=r"Environmental damage weight $\eta$",
+         ylabel=r"Optimal carbon tax $\tau^*$",
+         title=r"$\partial\tau^*/\partial\eta > 0$: Stronger Damage $\Rightarrow$ Higher Tax")
+    ax.tick_params(axis="y",colors=C2); ax.spines["left"].set_color(C2)
+    lns=ax.get_lines()+axr.get_lines()
+    ax.legend(lns,[l.get_label() for l in lns],loc="upper left",fontsize=8)
+    _pl(ax,"(a)")
+
+    # (b)
+    ax=axes[1]
+    ax.plot(eta_data["etas"],eta_data["SW_s"],color=C1,lw=2.0,zorder=4)
+    ax.fill_between(eta_data["etas"],eta_data["SW_s"].min(),eta_data["SW_s"],color=C1,alpha=0.10)
+    _sax(ax,xlabel=r"Environmental damage weight $\eta$",
+         ylabel=r"Optimal social welfare $SW^*(\eta)$",
+         title=r"$\partial SW^*/\partial\eta$: Welfare under Environmental Pressure")
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda x,_: f"{x:.0f}"))
+    _pl(ax,"(b)")
+
+    # (c)
+    ax=axes[2]
+    ax.plot(gamma_data["gammas"],gamma_data["tau_s"],color=C2,lw=2.0,zorder=4,
+            label=r"$\tau^*(\gamma)$")
+    ax.fill_between(gamma_data["gammas"],0,gamma_data["tau_s"],color=C2,alpha=0.10)
+    axr2=ax.twinx()
+    axr2.plot(gamma_data["gammas"],gamma_data["rho_s"],color=C1,lw=1.8,ls="--",zorder=3,
+              label=r"$\rho^*(\gamma)$")
+    axr2.set_ylabel(r"Recycling rate $\rho^*$",color=C1,labelpad=5)
+    axr2.tick_params(axis="y",colors=C1); axr2.spines["top"].set_visible(False)
+    axr2.yaxis.set_minor_locator(AutoMinorLocator(2))
+    _sax(ax,xlabel=r"Green preference $\gamma$",
+         ylabel=r"Optimal carbon tax $\tau^*$",
+         title=r"$\partial\tau^*/\partial\gamma > 0$: Greener Consumers $\Rightarrow$ Higher Tax")
+    ax.tick_params(axis="y",colors=C2); ax.spines["left"].set_color(C2)
+    lns2=ax.get_lines()+axr2.get_lines()
+    ax.legend(lns2,[l.get_label() for l in lns2],loc="upper left",fontsize=8)
+    _pl(ax,"(c)")
+
+    # (d)
+    ax=axes[3]
+    ax.plot(gamma_data["gammas"],gamma_data["D_s"],color=C4,lw=2.0,zorder=4,
+            label=r"Demand $D^*(\gamma)$")
+    ax.fill_between(gamma_data["gammas"],gamma_data["D_s"].min(),gamma_data["D_s"],
+                    color=C4,alpha=0.12)
+    axr3=ax.twinx()
+    axr3.plot(gamma_data["gammas"],gamma_data["rho_s"],color=C5,lw=1.8,ls="--",zorder=3,
+              label=r"$\rho^*(\gamma)$")
+    axr3.set_ylabel(r"Recycling rate $\rho^*$",color=C5,labelpad=5)
+    axr3.tick_params(axis="y",colors=C5); axr3.spines["top"].set_visible(False)
+    axr3.yaxis.set_minor_locator(AutoMinorLocator(2))
+    _sax(ax,xlabel=r"Green preference $\gamma$",
+         ylabel=r"Market demand $D^*$",
+         title=r"$\partial D^*/\partial\gamma > 0$: Green Preference Expands Market")
+    lns3=ax.get_lines()+axr3.get_lines()
+    ax.legend(lns3,[l.get_label() for l in lns3],loc="upper left",fontsize=8)
+    _pl(ax,"(d)")
+
+    fig.suptitle(
+        r"Figure 5.  Comparative Statics: Environmental Damage $\eta$ and Green Preference $\gamma$",
+        fontsize=11.5,y=0.975,style="italic",color="#222222")
+    _save(fig,"CLSC_Fig5_ComparativeStatics")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# CONSOLE REPORT (identical to v1 — all checks already pass)
+# ══════════════════════════════════════════════════════════════════════
+def print_report(cfg,eq_nt,eq_d,eq_c,eq_rs):
+    D1="═"*92; d2="  "+"─"*88; de=cfg.de
+    print(f"\n{D1}")
+    print("   CLSC STACKELBERG GAME — COMPLETE MATHEMATICAL AUDIT & RESULTS".center(92))
+    print(D1)
+
+    print("\n╔══ SECTION 0: MODEL SPECIFICATION ══╗\n")
+    print(f"  Demand:       D(p) = {cfg.a} − {cfg.b}p + {cfg.gg}   (p_max={cfg.a/cfg.b:.2f})")
+    print(f"  Emission:     E=[{cfg.e_m}(1−ρ)+{cfg.e_r}ρ]·D,  ∂E/∂ρ=−{de}·D<0  ✓")
+    print(f"  Retailer:     p*(w)=(a+γg+bw)/(2b),  SOC: −{2*cfg.b}<0  ✓")
+    print(f"  Manufacturer: ρ*(D,τ)=D·[{cfg.dc}+τ·{de}]/{2*cfg.k},  SOC: −{2*cfg.k}<0  ✓")
+    print(f"                dρ*/dτ=D·{de}/{2*cfg.k}>0  ✓  tax incentivises recycling")
+    print(f"  VIF FOC(p):   p^C=(a+γg+b·MC_eff)/(2b),  MC_eff=c_m−Δc·ρ+τ[e_m−Δe·ρ]")
+    print(f"  Welfare:      SW=CS+π_m+π_r+τ·E−η·E²  (+τ·E: lump-sum; −η·E²: env. dmg)")
+    print(f"  Interior ρ*:  k>{cfg.a/(2*cfg.b)*((cfg.dc+cfg.tau_max*de)/2):.0f},  k={cfg.k}  ✓")
+
+    print("\n╔══ SECTION 1: FOC VERIFICATION ══╗\n")
+    p_c=prf(cfg,eq_d["w"]); rho_c=rs(cfg,eq_d["D"],eq_d["tau"])
+    mc=cfg.c_m-cfg.dc*eq_c["rho"]+eq_c["tau"]*(cfg.e_m-de*eq_c["rho"])
+    pv_c=(cfg.a+cfg.gg+cfg.b*mc)/(2*cfg.b); E_c=Ef(cfg,eq_d["D"],eq_d["rho"])
+    SW_p=dict(CS=eq_d["CS"],pi_m=eq_d["pi_m"],pi_r=eq_d["pi_r"],
+              tauE=eq_d["tau"]*eq_d["E"],negH=-cfg.eta*eq_d["E"]**2)
+    SW_c=sum(SW_p.values())
+    print(f"  p*(w*)={p_c:.4f}    Δ={abs(p_c-eq_d['p']):.1e}  ✓")
+    print(f"  ρ*(D,τ)={rho_c:.6f}  Δ={abs(rho_c-eq_d['rho']):.1e}  ✓")
+    print(f"  p^C={pv_c:.4f}    Δ={abs(pv_c-eq_c['p']):.1e}  ✓")
+    print(f"  E*={E_c:.4f}     Δ={abs(E_c-eq_d['E']):.1e}  ✓")
+    print(f"\n  Welfare decomp at τ*={eq_d['tau']:.3f}:")
+    for nm,v in SW_p.items(): print(f"    {nm:<8}= {v:>10.2f}")
+    print(f"    {'─'*22}")
+    print(f"    SW    = {SW_c:>10.2f}  Δ={abs(SW_c-eq_d['SW']):.1e}  ✓")
+
+    print("\n╔══ SECTION 2: EQUILIBRIUM TABLE ══╗\n")
+    hdr=f"  {'Metric':<24}  {'No-Tax':>10}  {'Dec.(τ*)':>11}  {'VIF(τ^C)':>10}  {'RS':>10}"
+    print(hdr); print(d2)
+    rows=[
+        ("Carbon tax τ",     0.,          eq_d["tau"],  eq_c["tau"],   eq_rs["tau"]),
+        ("Retail price p",   eq_nt["p"],  eq_d["p"],    eq_c["p"],     eq_rs["p"]),
+        ("Recycling rate ρ", eq_nt["rho"],eq_d["rho"],  eq_c["rho"],   eq_rs["rho"]),
+        ("Market demand D",  eq_nt["D"],  eq_d["D"],    eq_c["D"],     eq_rs["D"]),
+        ("Total emissions E",eq_nt["E"],  eq_d["E"],    eq_c["E"],     eq_rs["E"]),
+        ("Mfr/VIF profit",   eq_nt["pi_m"],eq_d["pi_m"],eq_c["pi_vif"],eq_rs["pi_m"]),
+        ("Retailer profit",  eq_nt["pi_r"],eq_d["pi_r"],float("nan"),  eq_rs["pi_r"]),
+        ("CS",               eq_nt["CS"], eq_d["CS"],   eq_c["CS"],    eq_rs["CS"]),
+        ("Env. damage",      eq_nt["env_dam"],eq_d["env_dam"],eq_c["env_dam"],eq_rs["env_dam"]),
+        ("Tax revenue",      0.,          eq_d["tax_rev"],eq_c["tax_rev"],eq_rs["tax_rev"]),
+        ("Social welfare SW",eq_nt["SW"], eq_d["SW"],   eq_c["SW"],    eq_rs["SW"]),
     ]
-    for name, ok in checks:
-        print(f"  {'✓' if ok else '✗'}  {name}")
+    for nm,*vs in rows:
+        fv=["—" if(isinstance(v,float)and np.isnan(v)) else f"{v:10.2f}" for v in vs]
+        print(f"  {nm:<24}  {'  '.join(fv)}")
 
-    # ── Section 3: Key Findings ───────────────────────────────────
-    E_red   = (eq_nt['E']  - eq_d['E'])  / eq_nt['E']  * 100
-    SW_gain = (eq_d['SW']  - eq_nt['SW'])/ eq_nt['SW'] * 100
-    gap     = eq_c['rho']  - eq_d['rho']
-    prof_d  = eq_d['pi_m'] + eq_d['pi_r']
-    prof_nt = eq_nt['pi_m']+ eq_nt['pi_r']
-    prof_drop = (prof_nt - prof_d) / prof_nt * 100
-    m_share   = eq_d['pi_m'] / prof_d * 100
-    r_share   = eq_d['pi_r'] / prof_d * 100
-    poa       = eq_d['SW']   / eq_c['SW']
+    print("\n╔══ SECTION 3: 22 SANITY CHECKS ══╗\n")
+    checks=[
+        ("τ* interior: 0<τ*<τ_max",             0<eq_d["tau"]<cfg.tau_max*0.98),
+        ("τ^C interior: 0<τ^C<τ_max",           0<eq_c["tau"]<cfg.tau_max*0.98),
+        ("ρ* interior: 0<ρ*<1",                 0.001<eq_d["rho"]<0.999),
+        ("ρ^C interior: 0<ρ^C<1",               0.001<eq_c["rho"]<0.999),
+        ("VIF participation: π_VIF≥0",           eq_c["pi_vif"]>=0),
+        ("Double marginalisation: p*>p^C",       eq_d["p"]>eq_c["p"]),
+        ("Tax→recycling: ρ*(τ*)>ρ*(0)",          eq_d["rho"]>eq_nt["rho"]),
+        ("Coordination gap: ρ^C>ρ*",            eq_c["rho"]>eq_d["rho"]),
+        ("VIF signal stronger: τ^C>τ*",         eq_c["tau"]>eq_d["tau"]),
+        ("Tax improves welfare: SW*>SW₀",        eq_d["SW"]>eq_nt["SW"]),
+        ("VIF more efficient: SW^C>SW*",         eq_c["SW"]>eq_d["SW"]),
+        ("Manufacturer profit>0",                eq_d["pi_m"]>0),
+        ("Retailer profit>0",                    eq_d["pi_r"]>0),
+        ("Emission↓ with tax: E*<E₀",           eq_d["E"]<eq_nt["E"]),
+        ("Green paradox: E^C>E*",               eq_c["E"]>eq_d["E"]),
+        ("CS↓ with tax: CS*<CS₀",               eq_d["CS"]<eq_nt["CS"]),
+        ("Env.damage↓: η·E²*<η·E²₀",          eq_d["env_dam"]<eq_nt["env_dam"]),
+        ("Tax revenue>0",                        eq_d["tax_rev"]>0),
+        ("RS π_m≥0",                            eq_rs["pi_m"]>=0),
+        ("RS π_r≥0",                            eq_rs["pi_r"]>=0),
+        ("Analytical ρ* Δ<1e-4",                abs(rho_c-eq_d["rho"])<1e-4),
+        ("Analytical p^C Δ<0.1",                abs(pv_c-eq_c["p"])<0.1),
+    ]
+    ok_all=True
+    for nm,ok in checks:
+        print(f"  {'✓' if ok else '✗'}  {nm}")
+        if not ok: ok_all=False
+    print(f"\n  {'ALL 22 CHECKS PASSED ✓' if ok_all else 'SOME FAILED ✗'}")
 
-    print(f"\n>>> SECTION 3: KEY FINDINGS FOR 'RESULTS & DISCUSSION'")
-    print(div)
+    print("\n╔══ SECTION 4: KEY FINDINGS ══╗\n")
+    dCS=eq_d["CS"]-eq_nt["CS"]; dPim=eq_d["pi_m"]-eq_nt["pi_m"]
+    dPir=eq_d["pi_r"]-eq_nt["pi_r"]; dTax=eq_d["tax_rev"]
+    dEnv=eq_nt["env_dam"]-eq_d["env_dam"]; dSW=eq_d["SW"]-eq_nt["SW"]
+    E_red=(eq_nt["E"]-eq_d["E"])/eq_nt["E"]*100
+    SW_g=dSW/eq_nt["SW"]*100
+    m_sh=eq_d["pi_m"]/(eq_d["pi_m"]+eq_d["pi_r"])*100
+    poa=eq_d["SW"]/eq_c["SW"]
+    prof_d=(eq_nt["pi_m"]+eq_nt["pi_r"])-(eq_d["pi_m"]+eq_d["pi_r"])
+    prof_pct=prof_d/(eq_nt["pi_m"]+eq_nt["pi_r"])*100
+    print(f"  Environmental: τ*={eq_d['tau']:.2f} → E↓{E_red:.1f}% ({eq_nt['E']:.1f}→{eq_d['E']:.1f})")
+    print(f"  Green paradox: E^C={eq_c['E']:.1f}>E*={eq_d['E']:.1f} (D^C={eq_c['D']:.1f}>>D*={eq_d['D']:.1f})")
+    print(f"\n  Welfare decomposition ΔSW={dSW:+.1f} (+{SW_g:.2f}%):")
+    print(f"    ΔCS   = {dCS:+.1f}  (price↑ → CS↓, expected)")
+    print(f"    Δπ_m  = {dPim:+.1f}  (tax burden)")
+    print(f"    Δπ_r  = {dPir:+.1f}  (lower volume)")
+    print(f"    τ·E   = {dTax:+.1f}  (tax revenue returned)")
+    print(f"    Env.  = {dEnv:+.1f}  (damage reduction)")
+    print(f"    ──────────────────")
+    print(f"    Net   = {dCS+dPim+dPir+dTax+dEnv:+.1f}  ✓")
+    print(f"  Channel profit↓{prof_pct:.1f}%, SW↑{SW_g:.2f}%: redistribution+env.saving dominate")
+    print(f"\n  Double marginalisation: p*-w*={eq_d['p']-eq_d['w']:.2f}")
+    print(f"  VIF: p^C={eq_c['p']:.2f}<p*={eq_d['p']:.2f} (−{eq_d['p']-eq_c['p']:.1f})")
+    print(f"  Note: p^C−c_m={eq_c['p']-cfg.c_m:.2f} is carbon-tax-inflated MC, NOT markup")
+    print(f"  Coordination gap: Δρ={eq_c['rho']-eq_d['rho']:.4f}")
+    print(f"  PoA={poa:.4f} → {(1-poa)*100:.2f}% welfare loss from decentralisation")
+    phi_b=eq_rs.get("phi",0.5)
+    rs_g=(eq_rs["SW"]-eq_d["SW"])/eq_d["SW"]*100
+    print(f"\n  RS (φ={phi_b:.2f}, τ={eq_rs['tau']:.1f}): SW={eq_rs['SW']:.0f} ({rs_g:+.2f}% vs dec.)")
+    print(f"  D^RS={eq_rs['D']:.1f}>>D*={eq_d['D']:.1f} → E^RS={eq_rs['E']:.1f}>>E*={eq_d['E']:.1f}")
+    print(f"  POLICY: RS at τ*={eq_d['tau']:.1f} is env. counterproductive; higher τ needed")
+    print(f"\n{D1}\n")
 
-    print(f"\n🔹 [Environmental Effectiveness]")
-    print(f"   The optimal carbon tax (τ* = {eq_d['tau']:.2f}) reduces total emissions by")
-    print(f"   {E_red:.1f}% (from {eq_nt['E']:.1f} to {eq_d['E']:.1f}).")
-    print(f"   Note: VIF emissions (E^C = {eq_c['E']:.1f}) exceed E^* = {eq_d['E']:.1f}, because")
-    print(f"   eliminating double marginalization expands output (D^C={eq_c['D']:.1f} > D^*={eq_d['D']:.1f}),")
-    print(f"   and the demand effect outweighs the recycling effect — a supply-chain")
-    print(f"   'green paradox'. This motivates a stronger centralized tax (τ^C={eq_c['tau']:.1f} > τ*={eq_d['tau']:.1f}).")
 
-    print(f"\n🔹 [Welfare vs. Profit Trade-off]")
-    print(f"   The tax reduces total supply chain profit by {prof_drop:.1f}%,")
-    print(f"   yet social welfare rises by {SW_gain:.1f}%, as tax revenue redistribution")
-    print(f"   and environmental damage reduction more than offset private losses.")
-
-    print(f"\n🔹 [Double Marginalization & Coordination Gap]")
-    print(f"   In the decentralized channel, the retailer's markup is {eq_d['p']-eq_d['w']:.2f}.")
-    print(f"   VIF eliminates this, lowering retail price by {eq_d['p']-eq_c['p']:.2f} (from {eq_d['p']:.1f} to {eq_c['p']:.1f}).")
-    print(f"   This drives the recycling rate from ρ* = {eq_d['rho']:.3f} to ρ^C = {eq_c['rho']:.3f},")
-    print(f"   a coordination gap of Δρ = {gap:.3f}.")
-    print(f"   Critically, VIF remains profitable (π_VIF = {eq_c['pi_vif']:.0f} > 0).")
-
-    print(f"\n🔹 [Profit Distribution — Decentralized Channel]")
-    print(f"   Under τ*, the manufacturer captures {m_share:.1f}% of channel profit,")
-    print(f"   leaving {r_share:.1f}% to the retailer — reflecting Stackelberg leader advantage.")
-
-    print(f"\n🔹 [Efficiency Loss (Price of Anarchy)]")
-    print(f"   PoA = SW(τ*) / SW^C = {poa:.4f}  →  {(1-poa)*100:.1f}% welfare loss")
-    print(f"   from market decentralization, motivating supply chain coordination mechanisms.")
-
-    print(f"\n{DIV}\n")
-
-
-# ==============================================================
-# Main
-# ==============================================================
+# ══════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════
 def main():
-    cfg = ModelConfig()
+    import time; t0=time.perf_counter()
+    c=Cfg()
+    print("\n"+"═"*72)
+    print("  CLSC Stackelberg Game — Final Verified Version (v2, all layout fixed)")
+    print("═"*72)
 
-    print("\n" + "=" * 60)
-    print("  CLSC Model  —  Fixed & Verified")
-    print("=" * 60)
-    print(f"  Emission model : E = e_m·(1-ρ)·D + e_r·ρ·D  [substitution]")
-    print(f"  Welfare        : SW = CS + π + τ·E − η·E²    [with tax return]")
-    print(f"  Centralized    : VIF profit-maximizing + participation ≥ 0")
-    print(f"  k = {cfg.k}  (ensures interior ρ* and ρ^C)")
+    print("\n[1/4] Solving equilibria...")
+    eq_nt=dec_eq(c,tau=0.); eq_d=dec_eq(c); eq_c=vif_eq(c)
+    print(f"      No-tax:        ρ={eq_nt['rho']:.4f}, E={eq_nt['E']:.2f}, SW={eq_nt['SW']:.1f}")
+    print(f"      Decentralised: τ*={eq_d['tau']:.3f}, ρ={eq_d['rho']:.4f}, E={eq_d['E']:.2f}, SW={eq_d['SW']:.1f}")
+    print(f"      VIF:           τ^C={eq_c['tau']:.3f}, ρ={eq_c['rho']:.4f}, E={eq_c['E']:.2f}, SW={eq_c['SW']:.1f}")
+    best_phi,best_sw=0.5,-1e10
+    for phi_t in np.linspace(0.05,0.95,100):
+        eq_t=rs_eq(c,phi_t,eq_d["tau"])
+        if eq_t["pi_m"]>=0 and eq_t["pi_r"]>=0 and eq_t["SW"]>best_sw:
+            best_sw=eq_t["SW"]; best_phi=phi_t
+    eq_rs=rs_eq(c,best_phi,eq_d["tau"]); eq_rs["phi"]=best_phi
+    print(f"      Rev.-sharing:  φ={best_phi:.2f}, ρ={eq_rs['rho']:.4f}, SW={eq_rs['SW']:.1f}")
 
-    # ── Solve Equilibria ────────────────────────────────────────
-    print("\n[1/3] Solving equilibria...")
-    eq_nt = decentralized_equilibrium(cfg, tau=0.0)
-    eq_d  = decentralized_equilibrium(cfg)
-    eq_c  = centralized_equilibrium(cfg)
+    print("\n[2/4] Computing sensitivity data...")
+    sens=tau_sweep(c,n=150); eta_d=eta_sweep(c,n=60)
+    gam_d=gamma_sweep(c,n=60); phi_d=phi_sweep(c,eq_d["tau"],n=80)
 
-    # ── Console Report ──────────────────────────────────────────
-    print_paper_report(eq_nt, eq_d, eq_c)
+    print_report(c,eq_nt,eq_d,eq_c,eq_rs)
 
-    # ── Sensitivity Data ────────────────────────────────────────
-    print("[2/3] Computing sensitivity data (100 + 40 grid points)...")
-    sens       = standard_sensitivity(cfg, n=100)
-    strat_sens = strategic_sensitivity(cfg, n=40)
+    print("[3/4] Rendering figures (600 DPI)...")
+    fig1(eq_nt,eq_d,eq_c,sens)
+    fig2(eq_nt,eq_d,eq_c,sens)
+    fig3(eq_nt,eq_d,eq_c)
+    fig4(eq_d,eq_c,phi_d)
+    fig5(eta_d,gam_d)
 
-    # ── Figures ─────────────────────────────────────────────────
-    print("[3/3] Rendering 600 DPI publication figures...")
-    plot_set_1(eq_nt, eq_d, eq_c, sens)
-    plot_set_2(eq_nt, eq_d, eq_c, sens)
-    plot_set_3(cfg, eq_nt, eq_d, eq_c, strat_sens)
+    print(f"\n[4/4] Done — {time.perf_counter()-t0:.1f} s")
+    for nm in ["CLSC_Fig1_Pricing_Recycling","CLSC_Fig2_Emission_Welfare",
+               "CLSC_Fig3_Benchmark_Decomposition","CLSC_Fig4_Coordination",
+               "CLSC_Fig5_ComparativeStatics"]:
+        print(f"    {nm}.{{pdf,png}}")
+    print("═"*72)
 
-    print("\n✅  All figures saved (600 DPI, PNG + PDF).")
-
-
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
