@@ -1,0 +1,127 @@
+════════════════════════════════════════════════════════════════════════
+  CLSC Stackelberg Game — Final Verified Version (v2, all layout fixed)
+════════════════════════════════════════════════════════════════════════
+
+[1/4] Solving equilibria...
+      No-tax:        ρ=0.0775, E=46.72, SW=12626.0
+      Decentralised: τ*=33.347, ρ=0.1134, E=39.84, SW=12899.0
+      VIF:           τ^C=125.835, ρ=0.3591, E=47.75, SW=15129.8
+      Rev.-sharing:  φ=0.22, ρ=0.2553, SW=9949.0
+
+[2/4] Computing sensitivity data...
+
+════════════════════════════════════════════════════════════════════════════════════════════
+                 CLSC STACKELBERG GAME — COMPLETE MATHEMATICAL AUDIT & RESULTS              
+════════════════════════════════════════════════════════════════════════════════════════════
+
+╔══ SECTION 0: MODEL SPECIFICATION ══╗
+
+  Demand:       D(p) = 500.0 − 1.3p + 5.0   (p_max=384.62)
+  Emission:     E=[0.8(1−ρ)+0.2ρ]·D,  ∂E/∂ρ=−0.6·D<0  ✓
+  Retailer:     p*(w)=(a+γg+bw)/(2b),  SOC: −2.6<0  ✓
+  Manufacturer: ρ*(D,τ)=D·[30.0+τ·0.6]/24000.0,  SOC: −24000.0<0  ✓
+                dρ*/dτ=D·0.6/24000.0>0  ✓  tax incentivises recycling
+  VIF FOC(p):   p^C=(a+γg+b·MC_eff)/(2b),  MC_eff=c_m−Δc·ρ+τ[e_m−Δe·ρ]
+  Welfare:      SW=CS+π_m+π_r+τ·E−η·E²  (+τ·E: lump-sum; −η·E²: env. dmg)
+  Interior ρ*:  k>11538,  k=12000.0  ✓
+
+╔══ SECTION 1: FOC VERIFICATION ══╗
+
+  p*(w*)=346.5979    Δ=0.0e+00  ✓
+  ρ*(D,τ)=0.113400  Δ=0.0e+00  ✓
+  p^C=325.6216    Δ=6.4e-07  ✓
+  E*=39.8353     Δ=0.0e+00  ✓
+
+  Welfare decomp at τ*=33.347:
+    CS      =    9650.47
+    pi_m    =    4402.35
+    pi_r    =    2278.33
+    tauE    =    1328.40
+    negH    =   -4760.54
+    ──────────────────────
+    SW    =   12899.02  Δ=1.8e-12  ✓
+
+╔══ SECTION 2: EQUILIBRIUM TABLE ══╗
+
+  Metric                        No-Tax     Dec.(τ*)    VIF(τ^C)          RS
+  ────────────────────────────────────────────────────────────────────────────────────────
+  Carbon tax τ                    0.00       33.35      125.83       33.35
+  Retail price p                340.76      346.60      325.62      294.23
+  Recycling rate ρ                0.08        0.11        0.36        0.26
+  Market demand D                62.01       54.42       81.69      122.50
+  Total emissions E              46.72       39.84       47.75       79.24
+  Mfr/VIF profit               5842.84     4402.35     3586.03       84.79
+  Retailer profit              2957.47     2278.33  —     8972.27
+  CS                          10374.30     9650.47    12375.62    17086.03
+  Env. damage                  6548.56     4760.54     6840.72    18836.46
+  Tax revenue                     0.00     1328.40     6008.84     2642.42
+  Social welfare SW           12626.05    12899.02    15129.76     9949.04
+
+╔══ SECTION 3: 22 SANITY CHECKS ══╗
+
+  ✓  τ* interior: 0<τ*<τ_max
+  ✓  τ^C interior: 0<τ^C<τ_max
+  ✓  ρ* interior: 0<ρ*<1
+  ✓  ρ^C interior: 0<ρ^C<1
+  ✓  VIF participation: π_VIF≥0
+  ✓  Double marginalisation: p*>p^C
+  ✓  Tax→recycling: ρ*(τ*)>ρ*(0)
+  ✓  Coordination gap: ρ^C>ρ*
+  ✓  VIF signal stronger: τ^C>τ*
+  ✓  Tax improves welfare: SW*>SW₀
+  ✓  VIF more efficient: SW^C>SW*
+  ✓  Manufacturer profit>0
+  ✓  Retailer profit>0
+  ✓  Emission↓ with tax: E*<E₀
+  ✓  Green paradox: E^C>E*
+  ✓  CS↓ with tax: CS*<CS₀
+  ✓  Env.damage↓: η·E²*<η·E²₀
+  ✓  Tax revenue>0
+  ✓  RS π_m≥0
+  ✓  RS π_r≥0
+  ✓  Analytical ρ* Δ<1e-4
+  ✓  Analytical p^C Δ<0.1
+
+  ALL 22 CHECKS PASSED ✓
+
+╔══ SECTION 4: KEY FINDINGS ══╗
+
+  Environmental: τ*=33.35 → E↓14.7% (46.7→39.8)
+  Green paradox: E^C=47.8>E*=39.8 (D^C=81.7>>D*=54.4)
+
+  Welfare decomposition ΔSW=+273.0 (+2.16%):
+    ΔCS   = -723.8  (price↑ → CS↓, expected)
+    Δπ_m  = -1440.5  (tax burden)
+    Δπ_r  = -679.1  (lower volume)
+    τ·E   = +1328.4  (tax revenue returned)
+    Env.  = +1788.0  (damage reduction)
+    ──────────────────
+    Net   = +273.0  ✓
+  Channel profit↓24.1%, SW↑2.16%: redistribution+env.saving dominate
+
+  Double marginalisation: p*-w*=41.86
+  VIF: p^C=325.62<p*=346.60 (−21.0)
+  Note: p^C−c_m=125.62 is carbon-tax-inflated MC, NOT markup
+  Coordination gap: Δρ=0.2457
+  PoA=0.8526 → 14.74% welfare loss from decentralisation
+
+  RS (φ=0.22, τ=33.3): SW=9949 (-22.87% vs dec.)
+  D^RS=122.5>>D*=54.4 → E^RS=79.2>>E*=39.8
+  POLICY: RS at τ*=33.3 is env. counterproductive; higher τ needed
+
+════════════════════════════════════════════════════════════════════════════════════════════
+
+[3/4] Rendering figures (600 DPI)...
+    CLSC_Fig1_Pricing_Recycling.{pdf,png}
+    CLSC_Fig2_Emission_Welfare.{pdf,png}
+    CLSC_Fig3_Benchmark_Decomposition.{pdf,png}
+    CLSC_Fig4_Coordination.{pdf,png}
+    CLSC_Fig5_ComparativeStatics.{pdf,png}
+
+[4/4] Done — 12.2 s
+    CLSC_Fig1_Pricing_Recycling.{pdf,png}
+    CLSC_Fig2_Emission_Welfare.{pdf,png}
+    CLSC_Fig3_Benchmark_Decomposition.{pdf,png}
+    CLSC_Fig4_Coordination.{pdf,png}
+    CLSC_Fig5_ComparativeStatics.{pdf,png}
+════════════════════════════════════════════════════════════════════════
