@@ -1,127 +1,81 @@
-════════════════════════════════════════════════════════════════════════
-  CLSC Stackelberg Game — Final Verified Version (v2, all layout fixed)
-════════════════════════════════════════════════════════════════════════
+================================================================================
+            🚀 CLSC Stackelberg Game Model - FINAL COMPLETE VERSION 🚀            
+================================================================================
 
-[1/4] Solving equilibria...
-      No-tax:        ρ=0.0775, E=46.72, SW=12626.0
-      Decentralised: τ*=33.347, ρ=0.1134, E=39.84, SW=12899.0
-      VIF:           τ^C=125.835, ρ=0.3591, E=47.75, SW=15129.8
-      Rev.-sharing:  φ=0.22, ρ=0.2553, SW=9949.0
+📋 模型基础配置参数:
+   市场规模 (a): 500.0 | 价格弹性 (b): 1.3 | 绿色偏好系数 (γ): 10.0
+   制造成本 (c_m): 200.0 | 回收成本 (c_r): 170.0 | 回收固定成本 (k): 12000.0
+   单位排放 (e_m): 0.8 | 回收减排 (e_r): 0.2 | 环境损害权重 (η): 3.0
+   最大碳税 (τ_max): 150.0 | 优化精度 (tol): 1e-10
+--------------------------------------------------------------------------------
 
-[2/4] Computing sensitivity data...
+🔢 [1/5] 开始求解各场景均衡点...
+✅ 均衡点求解完成 (耗时: 1.06 秒)
+   📌 无碳税场景 (τ=0):
+      回收率 ρ: 0.0764 | 总排放 E: 46.10 | 社会福利 SW: 3578.4
+   📌 分散决策场景 (τ*):
+      最优碳税 τ*: 66.374 | 回收率 ρ: 0.1353 | 总排放 E: 33.42 | 社会福利 SW: 4418.4
+   📌 集中决策场景 (VIF):
+      最优碳税 τ^C: 148.796 | 回收率 ρ: 0.4003 | 总排放 E: 42.36 | 社会福利 SW: 5602.8
 
-════════════════════════════════════════════════════════════════════════════════════════════
-                 CLSC STACKELBERG GAME — COMPLETE MATHEMATICAL AUDIT & RESULTS              
-════════════════════════════════════════════════════════════════════════════════════════════
+📈 [2/5] 开始计算敏感性分析数据...
+✅  🔄 正在计算碳税扫描 (τ sweep, n=150)... 
+✅  🔄 正在计算环境损害敏感性 (η sweep, n=60)... 
+✅  🔄 正在计算绿色偏好敏感性 (γ sweep, n=60)... 
+   🔄 正在计算收益共享契约分析 (φ sweep, n=80)... ✅
+✅ 敏感性分析完成 (耗时: 6.23 秒)
 
-╔══ SECTION 0: MODEL SPECIFICATION ══╗
+🎨 [3/5] 开始渲染6个高质量论文级图形 (600 DPI)...
+    ✓ CLSC_Fig1_Pricing_Recycling.{pdf,png} (保存到当前目录)
+✅
+    ✓ CLSC_Fig2_Emission_Welfare.{pdf,png} (保存到当前目录)
+✅
+    ✓ CLSC_Fig3_Benchmark_Decomposition.{pdf,png} (保存到当前目录)
+✅
+    ✓ CLSC_Fig4_Coordination.{pdf,png} (保存到当前目录)
+✅
+    ✓ CLSC_Fig5_ComparativeStatics.{pdf,png} (保存到当前目录)
+✅
+    ✓ CLSC_Fig6_Sensitivity_Analysis.{pdf,png} (保存到当前目录)
+✅
+✅ 所有图形生成完成 (耗时: 15.39 秒)
+   📁 图形文件已保存到当前目录 (PDF/PNG 格式, 600 DPI)
+   📊 包含: 基础分析图×5 + 敏感性分析图×1 (共6个图形)
 
-  Demand:       D(p) = 500.0 − 1.3p + 5.0   (p_max=384.62)
-  Emission:     E=[0.8(1−ρ)+0.2ρ]·D,  ∂E/∂ρ=−0.6·D<0  ✓
-  Retailer:     p*(w)=(a+γg+bw)/(2b),  SOC: −2.6<0  ✓
-  Manufacturer: ρ*(D,τ)=D·[30.0+τ·0.6]/24000.0,  SOC: −24000.0<0  ✓
-                dρ*/dτ=D·0.6/24000.0>0  ✓  tax incentivises recycling
-  VIF FOC(p):   p^C=(a+γg+b·MC_eff)/(2b),  MC_eff=c_m−Δc·ρ+τ[e_m−Δe·ρ]
-  Welfare:      SW=CS+π_m+π_r+τ·E−η·E²  (+τ·E: lump-sum; −η·E²: env. dmg)
-  Interior ρ*:  k>11538,  k=12000.0  ✓
+📊 [4/5] 生成详细数值汇总表...
+-------------------------------------------------------------------------------------
+指标                                无碳税 (τ=0)           分散决策 (τ*)          集中决策 (VIF)
+-------------------------------------------------------------------------------------
+碳税 (τ)                                0.000              66.374             148.796
+零售价格 (p)                             338.18              349.90              329.49
+批发价格 (w)                             291.16              314.14                   -
+回收率 (ρ)                              0.0764              0.1353              0.4003
+市场需求 (D)                              61.13               46.49               75.66
+总排放 (E)                               46.10               33.42               42.36
+制造商利润 (π_m)                         5642.50             3056.97             2480.90
+零售商利润 (π_r)                         2874.24             1662.42                   -
+消费者剩余 (CS)                          1437.12              831.21             2201.80
+社会福利 (SW)                            3578.4              4418.4              5602.8
+-------------------------------------------------------------------------------------
 
-╔══ SECTION 1: FOC VERIFICATION ══╗
+🎯 [5/5] 核心结论与关键指标计算...
+   📏 回收率协调缺口 (ρ^C - ρ^*): 0.2650
+   📈 价格无效率 (PoA = SW^*/SW^C): 0.7886 (越接近1越优)
+   🌱 碳税减排效果 (E0 - E*): 12.68 单位
+   💹 福利提升 (SW* - SW0): 840.0
+   ⚖️  集中决策福利优势 (SW^C - SW*): 1184.4
 
-  p*(w*)=346.5979    Δ=0.0e+00  ✓
-  ρ*(D,τ)=0.113400  Δ=0.0e+00  ✓
-  p^C=325.6216    Δ=6.4e-07  ✓
-  E*=39.8353     Δ=0.0e+00  ✓
+================================================================================
+                             🏁 模型运行完成！总耗时: 22.68 秒                              
+================================================================================
 
-  Welfare decomp at τ*=33.347:
-    CS      =    9650.47
-    pi_m    =    4402.35
-    pi_r    =    2278.33
-    tauE    =    1328.40
-    negH    =   -4760.54
-    ──────────────────────
-    SW    =   12899.02  Δ=1.8e-12  ✓
+📝 输出文件说明:
+   • 6个高质量论文级图形文件 (PDF/PNG格式, 600 DPI) 已保存到当前目录
+   • 图形命名规则: CLSC_FigX_XXX.pdf/png (X为图号)
+   • 包含: 定价回收/排放福利/场景对比/收益共享/比较静态/敏感性分析
 
-╔══ SECTION 2: EQUILIBRIUM TABLE ══╗
-
-  Metric                        No-Tax     Dec.(τ*)    VIF(τ^C)          RS
-  ────────────────────────────────────────────────────────────────────────────────────────
-  Carbon tax τ                    0.00       33.35      125.83       33.35
-  Retail price p                340.76      346.60      325.62      294.23
-  Recycling rate ρ                0.08        0.11        0.36        0.26
-  Market demand D                62.01       54.42       81.69      122.50
-  Total emissions E              46.72       39.84       47.75       79.24
-  Mfr/VIF profit               5842.84     4402.35     3586.03       84.79
-  Retailer profit              2957.47     2278.33  —     8972.27
-  CS                          10374.30     9650.47    12375.62    17086.03
-  Env. damage                  6548.56     4760.54     6840.72    18836.46
-  Tax revenue                     0.00     1328.40     6008.84     2642.42
-  Social welfare SW           12626.05    12899.02    15129.76     9949.04
-
-╔══ SECTION 3: 22 SANITY CHECKS ══╗
-
-  ✓  τ* interior: 0<τ*<τ_max
-  ✓  τ^C interior: 0<τ^C<τ_max
-  ✓  ρ* interior: 0<ρ*<1
-  ✓  ρ^C interior: 0<ρ^C<1
-  ✓  VIF participation: π_VIF≥0
-  ✓  Double marginalisation: p*>p^C
-  ✓  Tax→recycling: ρ*(τ*)>ρ*(0)
-  ✓  Coordination gap: ρ^C>ρ*
-  ✓  VIF signal stronger: τ^C>τ*
-  ✓  Tax improves welfare: SW*>SW₀
-  ✓  VIF more efficient: SW^C>SW*
-  ✓  Manufacturer profit>0
-  ✓  Retailer profit>0
-  ✓  Emission↓ with tax: E*<E₀
-  ✓  Green paradox: E^C>E*
-  ✓  CS↓ with tax: CS*<CS₀
-  ✓  Env.damage↓: η·E²*<η·E²₀
-  ✓  Tax revenue>0
-  ✓  RS π_m≥0
-  ✓  RS π_r≥0
-  ✓  Analytical ρ* Δ<1e-4
-  ✓  Analytical p^C Δ<0.1
-
-  ALL 22 CHECKS PASSED ✓
-
-╔══ SECTION 4: KEY FINDINGS ══╗
-
-  Environmental: τ*=33.35 → E↓14.7% (46.7→39.8)
-  Green paradox: E^C=47.8>E*=39.8 (D^C=81.7>>D*=54.4)
-
-  Welfare decomposition ΔSW=+273.0 (+2.16%):
-    ΔCS   = -723.8  (price↑ → CS↓, expected)
-    Δπ_m  = -1440.5  (tax burden)
-    Δπ_r  = -679.1  (lower volume)
-    τ·E   = +1328.4  (tax revenue returned)
-    Env.  = +1788.0  (damage reduction)
-    ──────────────────
-    Net   = +273.0  ✓
-  Channel profit↓24.1%, SW↑2.16%: redistribution+env.saving dominate
-
-  Double marginalisation: p*-w*=41.86
-  VIF: p^C=325.62<p*=346.60 (−21.0)
-  Note: p^C−c_m=125.62 is carbon-tax-inflated MC, NOT markup
-  Coordination gap: Δρ=0.2457
-  PoA=0.8526 → 14.74% welfare loss from decentralisation
-
-  RS (φ=0.22, τ=33.3): SW=9949 (-22.87% vs dec.)
-  D^RS=122.5>>D*=54.4 → E^RS=79.2>>E*=39.8
-  POLICY: RS at τ*=33.3 is env. counterproductive; higher τ needed
-
-════════════════════════════════════════════════════════════════════════════════════════════
-
-[3/4] Rendering figures (600 DPI)...
-    CLSC_Fig1_Pricing_Recycling.{pdf,png}
-    CLSC_Fig2_Emission_Welfare.{pdf,png}
-    CLSC_Fig3_Benchmark_Decomposition.{pdf,png}
-    CLSC_Fig4_Coordination.{pdf,png}
-    CLSC_Fig5_ComparativeStatics.{pdf,png}
-
-[4/4] Done — 12.2 s
-    CLSC_Fig1_Pricing_Recycling.{pdf,png}
-    CLSC_Fig2_Emission_Welfare.{pdf,png}
-    CLSC_Fig3_Benchmark_Decomposition.{pdf,png}
-    CLSC_Fig4_Coordination.{pdf,png}
-    CLSC_Fig5_ComparativeStatics.{pdf,png}
-════════════════════════════════════════════════════════════════════════
+💡 关键发现总结:
+   1. 最优碳税能有效平衡减排与经济福利，但存在回收率协调缺口
+   2. 环境损害系数η↑ → 最优碳税τ*↑，绿色偏好系数γ↑ → 市场需求D↑
+   3. 集中决策(VIF)能实现更高回收率和福利，但需要渠道协调机制
+================================================================================
