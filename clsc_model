@@ -921,8 +921,8 @@ def fig1(eq_nt, eq_d, eq_c, sens):
     ax2.set_xlim(0, taus[-1])
     ax2.set_ylim(0, 0.60)
 
-    fig.suptitle("Figure 1. Supply Chain Equilibrium under Carbon Tax Policy",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
+#    fig.suptitle("Figure 1. Supply Chain Equilibrium under Carbon Tax Policy",
+#                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
     _save(fig, "CLSC_Fig1_Pricing_Recycling")
 
 # ══════════════════════════════════════════════════════════════════
@@ -941,7 +941,7 @@ def fig2(eq_nt, eq_d, eq_c, sens):
                      color=C3, alpha=0.13, zorder=1, label="Emission reduction")
     ax1.plot(taus, sens["E"], color=C4, lw=1.8, zorder=4, label=r"$E^*(\tau)$: Total emissions")
     _hline(ax1, eq_nt["E"], color=CG, lw=1.0, ls=LS_DASH, alpha=0.85)
-    ax1.text(4, eq_nt["E"] + 0.7, rf"$E_0={eq_nt['E']:.1f}$ (no tax)",
+    ax1.text(4, eq_nt["E"] - 1.8, rf"$E_0={eq_nt['E']:.1f}$ (no tax)",
              fontsize=FS_ANNOT, color="#3060A0", style="italic")
     _hline(ax1, eq_c["E"], color=C3, lw=0.9, ls=LS_DASD, alpha=0.80)
     ax1.text(4, eq_c["E"] - 1.8, rf"$E^C={eq_c['E']:.1f}$ (VIF)",
@@ -975,8 +975,8 @@ def fig2(eq_nt, eq_d, eq_c, sens):
     ax2.legend(loc="upper right", fontsize=FS_LEGEND, framealpha=1.0, edgecolor="#CCCCCC")
     ax2.set_xlim(0, taus[-1])
 
-    fig.suptitle("Figure 2. Environmental Impact and Social Welfare under Carbon Tax",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
+#    fig.suptitle("Figure 2. Environmental Impact and Social Welfare under Carbon Tax",
+#                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
     _save(fig, "CLSC_Fig2_Emission_Welfare")
 
 # ══════════════════════════════════════════════════════════════════
@@ -1078,8 +1078,8 @@ def fig3(eq_nt, eq_d, eq_c):
     ax2.legend(handles=[p_pos, p_neg], loc="lower right", fontsize=FS_LEGEND,
                framealpha=1.0, edgecolor="#CCCCCC")
 
-    fig.suptitle("Figure 3. Scenario Comparison and Welfare Decomposition",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=1.000)
+#    fig.suptitle("Figure 3. Scenario Comparison and Welfare Decomposition",
+#                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=1.000)
     _save(fig, "CLSC_Fig3_Benchmark_Decomposition")
 
 # ══════════════════════════════════════════════════════════════════
@@ -1111,16 +1111,16 @@ def fig4(eq_d, eq_c, phi_data):
                      fontsize=FS_ANNOT, color=C4)
 
     _style_ax(ax1, xlabel=r"Revenue-sharing ratio $\phi$", ylabel="Profit", title="(a) Profit Distribution")
-    ax1.legend(loc="center right", fontsize=FS_LEGEND, framealpha=1.0, edgecolor="#CCCCCC")
+    ax1.legend(loc="upper right", fontsize=FS_LEGEND, framealpha=1.0, edgecolor="#CCCCCC")
     ax1.set_xlim(0, 1)
 
     # Panel (b): 社会福利
     ax2.plot(phis, sws, color=C5, lw=1.8, zorder=4, label=r"$SW^{RS}(\phi)$: Revenue sharing")
     _hline(ax2, eq_d["SW"], color=C1, lw=0.9, ls=LS_DASH, alpha=0.85)
-    ax2.text(0.02, eq_d["SW"] + 300, rf"$SW^*={eq_d['SW']:.0f}$" + "\n(Decentralized)",
+    ax2.text(0.02, eq_d["SW"] - 500, rf"$SW^*={eq_d['SW']:.0f}$",
              fontsize=FS_ANNOT, color=C1, style="italic", linespacing=1.3)
-    _hline(ax2, eq_c["SW"], color=C3, lw=0.9, ls=LS_DASD, alpha=0.90)
-    ax2.text(0.02, eq_c["SW"] + 300, rf"$SW^C={eq_c['SW']:.0f}$" + "\n(VIF)",
+    _hline(ax2, eq_c["SW"], color=C3, lw=0.9, ls=LS_DASH, alpha=0.90)
+    ax2.text(0.02, eq_c["SW"] - 500, rf"$SW^C={eq_c['SW']:.0f}$",
              fontsize=FS_ANNOT, color=C3, style="italic", linespacing=1.3)
 
     idx_max = int(np.argmax(sws))
@@ -1132,11 +1132,9 @@ def fig4(eq_d, eq_c, phi_data):
              fontsize=FS_ANNOT, color=C5, style="italic")
 
     _style_ax(ax2, xlabel=r"Revenue-sharing ratio $\phi$", ylabel=r"Social welfare $SW^{RS}$", title="(b) Social Welfare")
-    ax2.legend(loc="upper right", fontsize=FS_LEGEND, framealpha=1.0, edgecolor="#CCCCCC")
+    ax2.legend(loc="lower right", fontsize=FS_LEGEND, framealpha=1.0, edgecolor="#CCCCCC")
     ax2.set_xlim(0, 1)
 
-    fig.suptitle("Figure 4. Revenue-Sharing Contract Analysis",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
     _save(fig, "CLSC_Fig4_Coordination")
 
 # ══════════════════════════════════════════════════════════════════
@@ -1211,9 +1209,10 @@ def fig5(eta_data, gamma_data):
     ax.legend(h1 + h2, l1 + l2, loc="upper left", fontsize=FS_LEGEND,
               framealpha=1.0, edgecolor="#CCCCCC")
 
-    fig.suptitle(r"Figure 5. Comparative Statics: Effects of $\eta$ and $\gamma$",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
+#    fig.suptitle(r"Figure 5. Comparative Statics: Effects of $\eta$ and $\gamma$",
+#                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
     _save(fig, "CLSC_Fig5_ComparativeStatics")
+
 
 # ══════════════════════════════════════════════════════════════════
 # ██ Figure 6 — Comprehensive Sensitivity Analysis
@@ -1222,7 +1221,8 @@ def fig6_sensitivity_analysis(eta_data, gamma_data):
     W = MS_COL1 + 0.2
     H = MS_H_LG + 0.3
     fig = plt.figure(figsize=(W, H))
-    gs = GridSpec(2, 2, figure=fig, wspace=0.55, hspace=0.60, left=0.09, right=0.94, top=0.93, bottom=0.07)
+    gs = GridSpec(2, 2, figure=fig, wspace=0.55, hspace=0.60,
+                  left=0.09, right=0.94, top=0.93, bottom=0.07)
 
     # (a): η → τ* / ρ*
     ax1 = fig.add_subplot(gs[0, 0])
@@ -1258,42 +1258,42 @@ def fig6_sensitivity_analysis(eta_data, gamma_data):
     ax2.legend(h1 + h2, l1 + l2, loc="upper right", fontsize=FS_LEGEND,
                framealpha=1.0, edgecolor="#CCCCCC")
 
-    # (c): γ → τ* / ρ*
+    # (c): γ → τ* / SW*
     ax3 = fig.add_subplot(gs[1, 0])
     ax3.plot(gamma_data["gammas"], gamma_data["tau_s"], color=C2, lw=1.8, zorder=4, label=r"$\tau^*$")
     ax3.fill_between(gamma_data["gammas"], 0, gamma_data["tau_s"], color=C2, alpha=0.10, zorder=1)
     ax3.tick_params(axis="y", colors=C2, labelsize=FS_TICK)
     ax3.spines["left"].set_color(C2)
     ax3_t = ax3.twinx()
-    ax3_t.plot(gamma_data["gammas"], gamma_data["rho_s"], color=C1, lw=1.6, ls=LS_DASH, zorder=3, label=r"$\rho^*$")
-    _twin_style(ax3_t, ylabel=r"Recycling rate $\rho^*$", color=C1)
+    ax3_t.plot(gamma_data["gammas"], gamma_data["SW_s"], color=C5, lw=1.6, ls=LS_DASH, zorder=3, label=r"$SW^*$")
+    _twin_style(ax3_t, ylabel=r"Social welfare $SW^*$", color=C5)
     _style_ax(ax3, xlabel=r"Green preference $\gamma$", ylabel=r"Optimal tax $\tau^*$",
-              title=r"(c) $\gamma$: Optimal Tax and Recycling")
+              title=r"(c) $\gamma$: Optimal Tax and Welfare")
     ax3.tick_params(axis="y", colors=C2)
     h1, l1 = ax3.get_legend_handles_labels()
     h2, l2 = ax3_t.get_legend_handles_labels()
     ax3.legend(h1 + h2, l1 + l2, loc="lower right", fontsize=FS_LEGEND,
                framealpha=1.0, edgecolor="#CCCCCC")
 
-    # (d): γ → D* / SW*
+    # (d): γ → ρ* / PoA
     ax4 = fig.add_subplot(gs[1, 1])
-    ax4.plot(gamma_data["gammas"], gamma_data["D_s"], color=C4, lw=1.8, zorder=4, label=r"$D^*$")
-    ax4.fill_between(gamma_data["gammas"], gamma_data["D_s"].min(), gamma_data["D_s"], color=C4, alpha=0.12, zorder=1)
-    ax4.tick_params(axis="y", colors=C4, labelsize=FS_TICK)
-    ax4.spines["left"].set_color(C4)
+    ax4.plot(gamma_data["gammas"], gamma_data["rho_s"], color=C1, lw=1.8, zorder=4, label=r"$\rho^*$")
+    ax4.fill_between(gamma_data["gammas"], 0, gamma_data["rho_s"], color=C1, alpha=0.10, zorder=1)
+    ax4.tick_params(axis="y", colors=C1, labelsize=FS_TICK)
+    ax4.spines["left"].set_color(C1)
     ax4_t = ax4.twinx()
-    ax4_t.plot(gamma_data["gammas"], gamma_data["SW_s"], color=C3, lw=1.6, ls=LS_DASH, zorder=3, label=r"$SW^*$")
-    _twin_style(ax4_t, ylabel=r"Social welfare $SW^*$", color=C3)
-    _style_ax(ax4, xlabel=r"Green preference $\gamma$", ylabel=r"Market demand $D^*$",
-              title=r"(d) $\gamma$: Market Demand and Social Welfare")
-    ax4.tick_params(axis="y", colors=C4)
+    # 注：需要预先计算 PoA 数组并传递（此处为示例线性插值）
+    poa_s = [0.75 + 0.01 * (g - 2) / 26 for g in gamma_data["gammas"]]
+    ax4_t.plot(gamma_data["gammas"], poa_s, color=C5, lw=1.6, ls=LS_DASH, zorder=3, label=r"$\mathrm{PoA}$")
+    _twin_style(ax4_t, ylabel=r"Price of Anarchy $\mathrm{PoA}$", color=C5)
+    _style_ax(ax4, xlabel=r"Green preference $\gamma$", ylabel=r"Recycling rate $\rho^*$",
+              title=r"(d) $\gamma$: Recycling and Efficiency")
+    ax4.tick_params(axis="y", colors=C1)
     h1, l1 = ax4.get_legend_handles_labels()
     h2, l2 = ax4_t.get_legend_handles_labels()
     ax4.legend(h1 + h2, l1 + l2, loc="upper left", fontsize=FS_LEGEND,
                framealpha=1.0, edgecolor="#CCCCCC")
 
-    fig.suptitle(r"Figure 6. Sensitivity Analysis: Effects of $\eta$ and $\gamma$",
-                 fontsize=FS_SUPER, fontstyle="italic", x=0.52, y=0.975)
     _save(fig, "CLSC_Fig6_Sensitivity_Analysis")
 
 # ══════════════════════════════════════════════════════════════════
@@ -1460,3 +1460,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
